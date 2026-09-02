@@ -1,0 +1,13 @@
+
+> aether-webmcp@1.0.0 dev
+> tsx server/index.ts
+
+
+======================================================
+⚡ Aether - Universal Agent Mediation Layer Server ⚡
+Listening on http://localhost:3001
+WebSocket ready at ws://localhost:3001/ws
+WebMCP Bridge Active.
+======================================================
+
+^C^C
