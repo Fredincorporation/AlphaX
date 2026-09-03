@@ -3,6 +3,7 @@
  * Skipped on Vercel (frontend-only, no browser is needed).
  * Installs only the browser by default because hosted build environments may
  * not allow the privileged package-manager step used by --with-deps.
+ * The local browser path keeps the binary with node_modules for deployment.
  * Set PLAYWRIGHT_INSTALL_DEPS=true when system dependencies can be installed.
  * Note: .cjs extension because package.json uses "type": "module".
  */
@@ -19,6 +20,7 @@ const command = installDeps
 
 console.log(`[install-browsers] Running: ${command}`);
 const result = spawnSync(command, {
+  env: { ...process.env, PLAYWRIGHT_BROWSERS_PATH: '0' },
   stdio: 'inherit',
   shell: true,
 });

@@ -8,7 +8,7 @@
     "dev": "tsx server/index.ts",
     "dev:frontend": "vite",
     "build": "tsc && vite build",
-    "start": "node dist/server/index.js",
+    "start": "node scripts/start-server.cjs",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test tests/*.test.ts",
     "postinstall": "node scripts/install-browsers.cjs"
