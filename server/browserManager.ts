@@ -87,14 +87,27 @@ export class BrowserManager {
     return session;
   }
 
-  async navigateTo(sessionId: string, url: string): Promise<{ title: string; currentUrl: string }> {
+  async navigateTo(sessionId: string, url: string, allowRecovery = true): Promise<{ title: string; currentUrl: string }> {
     const session = await this.getOrCreateSession(sessionId);
     const parsedUrl = validateNavigationTarget(url, session.page.url());
 
-    await session.page.goto(parsedUrl, {
-      waitUntil: 'domcontentloaded',
-      timeout: 30000,
-    });
+    try {
+      await session.page.goto(parsedUrl, {
+        waitUntil: 'domcontentloaded',
+        timeout: 30000,
+      });
+    } catch (error: any) {
+      const message = error?.message || '';
+      const targetCrashed = /page crashed|target crashed|target page, context or browser has been closed/i.test(message);
+      if (allowRecovery && targetCrashed) {
+        await this.closeSession(sessionId);
+        return this.navigateTo(sessionId, parsedUrl, false);
+      }
+      if (targetCrashed) {
+        throw new Error(`Target site crashed Chromium while loading ${parsedUrl}. The page may be blocking automation and cannot be completed in the controlled Chromium window or through a popup.`);
+      }
+      throw error;
+    }
 
     // Wait a brief moment for dynamic JS to render
     try {

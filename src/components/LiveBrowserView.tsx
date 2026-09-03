@@ -13,7 +13,7 @@ export const LiveBrowserView: React.FC = () => {
   } = useMediatorStore();
 
   const isNavigating = status === 'navigating' || status === 'analyzing';
-  const isAutomationChallenge = status === 'error' && /anti-bot challenge|captcha|verify you are human|robot check|access denied/i.test(statusMessage);
+  const isAutomationChallenge = status === 'error' && /anti-bot challenge|captcha|verify you are human|robot check|access denied|blocking automation|crashed chromium/i.test(statusMessage);
 
   return (
     <div className="bg-card/70 border border-border/70 rounded-xl overflow-hidden shadow-lg flex flex-col h-[520px]">
