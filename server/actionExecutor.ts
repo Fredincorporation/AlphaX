@@ -50,7 +50,7 @@ function getActionSelector(selector: string, tool: WebMCPToolDefinition): string
   const isAmazonSearch = /amazon\./i.test(`${tool.domain} ${tool.annotations.sourceUrl || ''}`)
     && /search/i.test(`${tool.name} ${tool.description}`);
   if (isAmazonSearch && /twotabsearchtextbox/i.test(selector)) {
-    return '#twotabsearchtextbox:visible, input[name="field-keywords"]:visible, input[aria-label*="Search"]:visible';
+    return '#twotabsearchtextbox:visible, input[name="field-keywords"]:visible, input[type="search"]:visible, input[placeholder*="Search"]:visible, input[aria-label*="Search"]:visible';
   }
   return selector;
 }
@@ -238,7 +238,7 @@ export class ActionExecutor {
             if (!step.selector) throw new Error('Missing selector for fill step');
             const selector = getActionSelector(step.selector, tool);
             await page.waitForSelector(selector, { timeout: getActionTimeout(step, tool) });
-            await page.fill(selector, stepValue);
+            await page.locator(selector).first().fill(stepValue);
             break;
           }
 
