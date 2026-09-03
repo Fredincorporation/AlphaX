@@ -61,6 +61,13 @@ function getActionTimeout(step: ActionStep, tool: WebMCPToolDefinition): number 
   return isAmazonSearch ? Math.max(step.timeoutMs || 0, 20000) : (step.timeoutMs || 8000);
 }
 
+function getFillSelector(selector: string): string {
+  if (/^#[a-zA-Z_][\w-]*$/.test(selector)) {
+    return `input${selector}:visible, textarea${selector}:visible, select${selector}:visible`;
+  }
+  return selector;
+}
+
 export class ActionExecutor {
   private pendingConfirmations: Map<string, { resolve: (val: boolean) => void; reject: (err: any) => void }> = new Map();
 
@@ -236,7 +243,7 @@ export class ActionExecutor {
           case 'fill':
           case 'type': {
             if (!step.selector) throw new Error('Missing selector for fill step');
-            const selector = getActionSelector(step.selector, tool);
+            const selector = getFillSelector(getActionSelector(step.selector, tool));
             await page.waitForSelector(selector, { timeout: getActionTimeout(step, tool) });
             await page.locator(selector).first().fill(stepValue);
             break;
