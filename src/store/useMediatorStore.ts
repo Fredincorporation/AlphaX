@@ -79,6 +79,7 @@ export interface MediatorState {
   rejectTool: (toolId: string) => void;
   updateToolDefinition: (tool: WebMCPToolDefinition) => void;
   executeTool: (tool: WebMCPToolDefinition, params: Record<string, any>, origin?: 'webmcp-agent' | 'playground' | 'human-tester') => Promise<ToolExecutionResponse | null>;
+  executeToolInternal: (tool: WebMCPToolDefinition, params: Record<string, any>, origin?: 'webmcp-agent' | 'playground' | 'human-tester') => Promise<ToolExecutionResponse | null>;
   respondToConfirmation: (confirmationId: string, approved: boolean) => void;
   revokeDomainTools: (domain?: string) => Promise<void>;
   fetchAuditHistory: () => Promise<void>;
@@ -93,6 +94,7 @@ export interface MediatorState {
 let ws: WebSocket | null = null;
 let wsPingTimer: any = null;
 let activeWsSession: string | null = null;
+let executionQueue = Promise.resolve();
 
 function setupWebSocket(sessionId: string, get: () => MediatorState, set: (fn: Partial<MediatorState> | ((state: MediatorState) => Partial<MediatorState>)) => void) {
   // If already connected for this session, don't duplicate
@@ -463,6 +465,21 @@ export const useMediatorStore = create<MediatorState>((set, get) => {
     },
 
     executeTool: async (tool, params, origin = 'playground') => {
+      let releaseQueue: () => void = () => undefined;
+      const previousExecution = executionQueue;
+      executionQueue = new Promise<void>((resolve) => {
+        releaseQueue = resolve;
+      });
+      await previousExecution;
+
+      try {
+        return await get().executeToolInternal(tool, params, origin);
+      } finally {
+        releaseQueue();
+      }
+    },
+
+    executeToolInternal: async (tool, params, origin = 'playground') => {
       const state = get();
       set({
         activeExecutionTool: tool.name,
