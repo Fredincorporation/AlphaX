@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { resolveVisibleTarget } from '../server/actionExecutor';
+import { getActionSelector, resolveVisibleTarget } from '../server/actionExecutor';
 import { findSearchInput } from '../server/llmToolGenerator';
 
 class FakeCandidate {
@@ -49,4 +49,15 @@ test('does not mistake a submit button for a search input', () => {
   ] as any);
 
   assert.equal(searchInput?.selector, 'input[name="q"]');
+});
+
+test('repairs stale Google btnK search selectors for fill actions', () => {
+  const selector = getActionSelector('input[name="btnK"]', {
+    domain: 'www.google.com',
+    name: 'search_site',
+    description: 'Perform a search query',
+    annotations: { sourceUrl: 'https://www.google.com/' },
+  } as any);
+
+  assert.equal(selector, 'textarea[name="q"]:visible, input[name="q"]:visible');
 });

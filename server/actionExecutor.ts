@@ -46,7 +46,12 @@ async function evaluateWithNavigationRetry<T>(page: Page, evaluate: () => Promis
   throw new Error('Page evaluation failed after navigation retries.');
 }
 
-function getActionSelector(selector: string, tool: WebMCPToolDefinition): string {
+export function getActionSelector(selector: string, tool: WebMCPToolDefinition): string {
+  const isGoogleSearch = /google\./i.test(`${tool.domain} ${tool.annotations.sourceUrl || ''}`)
+    && /search/i.test(`${tool.name} ${tool.description}`);
+  if (isGoogleSearch && /(?:^|\[)name=['"]?btnK['"]?/i.test(selector)) {
+    return 'textarea[name="q"]:visible, input[name="q"]:visible';
+  }
   const isAmazonSearch = /amazon\./i.test(`${tool.domain} ${tool.annotations.sourceUrl || ''}`)
     && /search/i.test(`${tool.name} ${tool.description}`);
   if (isAmazonSearch && /twotabsearchtextbox/i.test(selector)) {
