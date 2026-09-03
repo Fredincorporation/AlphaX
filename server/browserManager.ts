@@ -14,6 +14,21 @@ interface ManagedSession {
   highlightOverlayActive?: boolean;
 }
 
+async function evaluatePageWithRetry<T>(page: Page, evaluate: () => Promise<T>): Promise<T> {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      return await evaluate();
+    } catch (error: any) {
+      const message = error?.message || '';
+      const isTransientNavigation = /Execution context was destroyed|most likely because of a navigation/i.test(message);
+      if (!isTransientNavigation || attempt === 2) throw error;
+      await page.waitForLoadState('domcontentloaded', { timeout: 10000 }).catch(() => undefined);
+      await page.waitForTimeout(250);
+    }
+  }
+  throw new Error('Page analysis evaluation failed after navigation retries.');
+}
+
 export class BrowserManager {
   private browser: Browser | null = null;
   private sessions: Map<string, ManagedSession> = new Map();
@@ -25,7 +40,7 @@ export class BrowserManager {
   }
 
   async initBrowser(): Promise<Browser> {
-    if (!this.browser) {
+    if (!this.browser || !this.browser.isConnected()) {
       this.browser = await chromium.launch({
         headless: true,
         args: [
@@ -106,7 +121,7 @@ export class BrowserManager {
     return session.page;
   }
 
-  async analyzePage(sessionId: string): Promise<PageAnalysisResult> {
+  async analyzePage(sessionId: string, allowRecovery = true): Promise<PageAnalysisResult> {
     const session = await this.getOrCreateSession(sessionId);
     const page = session.page;
     const url = page.url();
@@ -117,7 +132,9 @@ export class BrowserManager {
     } catch { }
 
     // Extract interactive elements, forms, links, headings
-    const analysisData = await page.evaluate(() => {
+    let analysisData;
+    try {
+      analysisData = await evaluatePageWithRetry(page, () => page.evaluate(() => {
       // 1. Interactive Elements
       const interactiveElements: any[] = [];
       const selectorCounter: Record<string, number> = {};
@@ -227,7 +244,18 @@ export class BrowserManager {
         navigationLinks: navLinks,
         rawTextSnippet: bodyText,
       };
-    });
+      }));
+    } catch (error: any) {
+      const message = error?.message || '';
+      const pageCrashed = /page crashed|target page, context or browser has been closed/i.test(message);
+      if (allowRecovery && pageCrashed && url && url !== 'about:blank') {
+        await this.closeSession(sessionId);
+        const recoveredSession = await this.getOrCreateSession(sessionId);
+        await recoveredSession.page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+        return this.analyzePage(sessionId, false);
+      }
+      throw new Error(`Page evaluate crashed while analyzing ${url}: ${message}`);
+    }
 
     const screenshotBase64 = await this.captureScreenshot(sessionId);
 
