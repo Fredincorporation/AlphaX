@@ -163,7 +163,7 @@ Respond strictly in JSON format with a "tools" key containing an array of tool o
       throw new Error(`GroqCloud API error HTTP ${res.status}: ${errBody}`);
     }
 
-    const data = await res.json();
+    const data = await res.json() as any;
     const content = data.choices?.[0]?.message?.content || '{}';
     const parsed = JSON.parse(content);
     const rawList: any[] = Array.isArray(parsed) ? parsed : parsed.tools || parsed.toolDefinitions || Object.values(parsed)[0] || [];
@@ -204,7 +204,7 @@ Respond only with JSON: {"tools": [...]}`;
       throw new Error(`Gemini API error HTTP ${res.status}: ${errBody}`);
     }
 
-    const data = await res.json();
+    const data = await res.json() as any;
     const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
     const parsed = JSON.parse(rawText);
     const rawList: any[] = Array.isArray(parsed) ? parsed : parsed.tools || parsed.toolDefinitions || Object.values(parsed)[0] || [];

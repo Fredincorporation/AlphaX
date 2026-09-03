@@ -1,5 +1,5 @@
 // Central backend configuration.
-// Vercel: set VITE_API_URL=https://alphax-hv72.onrender.com and VITE_WS_URL=wss://alphax-hv72.onrender.com
+// Vercel: set these to the deployed Cloudflare Worker API hostname.
 // When unset (local dev), empty base = same-origin, which vite.config.ts proxies to localhost:3001.
 export const API_BASE: string = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/+$/, '') ?? '';
 export const WS_BASE: string = (import.meta.env.VITE_WS_URL as string | undefined)?.replace(/\/+$/, '') ?? '';

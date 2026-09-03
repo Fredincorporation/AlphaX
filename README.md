@@ -1,6 +1,6 @@
 # AlphaX
 
-AlphaX is a human-supervised WebMCP mediation layer. It uses a controlled Playwright browser to inspect an existing website, propose structured tools, and execute approved actions through a live browser session.
+AlphaX is a human-supervised WebMCP mediation layer. It uses Cloudflare Browser Rendering to inspect websites, propose structured tools, and execute approved actions.
 
 ## What It Does
 
@@ -10,7 +10,7 @@ AlphaX is a human-supervised WebMCP mediation layer. It uses a controlled Playwr
 4. Review, edit, approve, or reject proposed tools.
 5. Register approved tools through `document.modelContext`, `window.modelContext`, and `navigator.modelContext`.
 6. Execute recipes through Playwright with human supervision and execution logging.
-7. Store tools and execution history locally, with optional Supabase persistence.
+7. Store tools and execution history in Cloudflare D1.
 
 The application includes a zero-key heuristic tool generator. GroqCloud and Gemini are optional enhancements.
 
@@ -20,21 +20,21 @@ The application includes a zero-key heuristic tool generator. GroqCloud and Gemi
 Browser UI
   | REST and WebSocket
   v
-Express server
-  |-- BrowserManager -> Playwright Chromium -> target website
+Cloudflare Worker
+  |-- Browser Rendering -> target website
+  |-- Durable Objects -> sessions, WebSockets, confirmations
   |-- LLMToolGenerator -> GroqCloud, Gemini, or heuristics
-  |-- ActionExecutor -> supervised recipe execution
-  |-- PersistenceStore -> local memory and optional Supabase
+  |-- D1 -> tools and audit history
   v
 WebMCP Bridge -> document.modelContext / window.modelContext / navigator.modelContext
 ```
 
 ## Requirements
 
-- Node.js 18 or newer
-- npm
-- Chromium dependencies when running Playwright on Linux outside a managed image
-- Optional: Supabase project and LLM provider API key
+- Node.js and npm for local development
+- Cloudflare account with Browser Rendering enabled
+- D1 database and Durable Objects namespace
+- Optional GroqCloud or Gemini API key
 
 ## Install
 
@@ -44,32 +44,19 @@ cd AlphaX
 npm install
 ```
 
-The `postinstall` script downloads the Playwright Chromium binary into the project-local Playwright directory. It does not run the privileged Linux package installation by default, which keeps hosted builds such as Render non-interactive.
-
-To explicitly install operating-system dependencies in an environment where you have permission to do so:
-
-```bash
-PLAYWRIGHT_INSTALL_DEPS=true npm install
-```
+Cloudflare supplies the browser runtime; this project does not download local Chromium during installation.
 
 ## Configuration
 
 Create a `.env` file when you need server-side or frontend configuration. All provider keys are optional.
 
 ```env
-# Optional Supabase persistence
-VITE_SUPABASE_URL=https://your-project.supabase.co
-VITE_SUPABASE_ANON_KEY=your-anon-key
-SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+# Optional frontend API override
+VITE_API_URL=https://api.yourdomain.com
+VITE_WS_URL=wss://api.yourdomain.com
 
-# Optional neural tool synthesis
-GROQ_API_KEY=your-groq-key
-GEMINI_API_KEY=your-gemini-key
-
-# Server
-PORT=3001
-# Keep this at 1 on small hosted instances; increase only with sufficient RAM.
-MAX_BROWSER_SESSIONS=1
+# Worker secrets: npx wrangler secret put GROQ_API_KEY
+# Worker secrets: npx wrangler secret put GEMINI_API_KEY
 
 # Frontend-to-backend URLs for a separately deployed frontend
 VITE_API_URL=https://your-backend.example.com
@@ -78,11 +65,11 @@ VITE_WS_URL=wss://your-backend.example.com
 
 When `VITE_API_URL` and `VITE_WS_URL` are unset, the frontend uses same-origin requests. Vite proxies `/api` and `/ws` to `http://localhost:3001` during local development.
 
-If Supabase is enabled, run [`supabase/schema.sql`](supabase/schema.sql) in the Supabase SQL editor. Without Supabase, AlphaX uses its in-memory persistence fallback.
+Create the D1 database and apply migrations with `npx wrangler d1 migrations apply alphax --remote`.
 
 ## Run Locally
 
-Run the backend:
+Run the Cloudflare backend:
 
 ```bash
 npm run dev
@@ -98,7 +85,7 @@ Open `http://localhost:5173`.
 
 Useful local endpoints:
 
-- `GET /api/health` - process memory, uptime, and active browser-session metrics
+- `GET /api/health` - Worker health and runtime information
 - `GET /api/samples` - available sample targets
 - `POST /api/analyze` - navigate, analyze, and generate tools
 - `GET /api/tools` - list stored tools
@@ -106,28 +93,17 @@ Useful local endpoints:
 - `GET /api/history` - execution history
 - `ws://localhost:3001/ws?sessionId=...` - live status and confirmation events
 
-## Production Build
+## Cloudflare Deployment
 
 ```bash
 npm run typecheck
 npm test
-npm run build
-npm start
+npm run build:worker
+npx wrangler d1 migrations apply alphax --remote
+npm run deploy
 ```
 
-The production server serves the Vite output when `NODE_ENV=production`. The `start` script uses `scripts/start-server.cjs` to select the same project-local Playwright browser path used during installation.
-
-### Render
-
-Use these settings for a combined backend and frontend deployment:
-
-- Build command: `npm install`
-- Start command: `npm start`
-- Environment: `NODE_ENV=production`
-
-Do not add `npx playwright install --with-deps chromium` to the build command. `--with-deps` attempts privileged operating-system package installation and can fail in Render's non-interactive build environment. The postinstall script already installs Chromium without that step.
-
-For a separately deployed frontend, set `VITE_API_URL` and `VITE_WS_URL` before the frontend build. The backend must allow the frontend origin through its CORS configuration and expose both HTTP and WebSocket traffic.
+Set `database_id` in `wrangler.jsonc`, configure `ALLOWED_ORIGIN` to the Vercel origin, and set Vercel's `VITE_API_URL` and `VITE_WS_URL` to the Worker hostname.
 
 ## Supervision Modes
 
@@ -159,13 +135,13 @@ Any other reachable URL can be analyzed, subject to the target site's policies a
 
 | Script | Purpose |
 | --- | --- |
-| `npm run dev` | Start the Express backend with `tsx` |
+| `npm run dev` | Start the Cloudflare Worker locally |
 | `npm run dev:frontend` | Start the Vite development server |
 | `npm run build` | Typecheck and build the frontend |
 | `npm run typecheck` | Run TypeScript without emitting files |
-| `npm test` | Run the Node test suite |
-| `npm start` | Start the production server |
-| `npm run postinstall` | Install the project-local Playwright browser |
+| `npm test` | Run the test suite |
+| `npm run build:worker` | Validate the Worker deployment |
+| `npm run deploy` | Deploy the Worker |
 
 ## License
 

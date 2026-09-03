@@ -1,0 +1,52 @@
+{
+    "$schema": "node_modules/wrangler/config-schema.json",
+    "name": "alphax-api",
+    "main": "worker/index.ts",
+    "compatibility_date": "2026-09-03",
+    "compatibility_flags": [
+        "nodejs_compat"
+    ],
+    "workers_dev": true,
+    "observability": {
+        "enabled": true
+    },
+    "vars": {
+        "ALLOWED_ORIGIN": "https://alphax-chi.vercel.app/"
+    },
+    "browser": {
+        "binding": "BROWSER"
+    },
+    "assets": {
+        "directory": "./dist"
+    },
+    "d1_databases": [
+        {
+            "binding": "DB",
+            "database_name": "alphax",
+            "database_id": "970f567d-bec0-4573-8882-6e6426f09d2f",
+            "migrations_dir": "migrations"
+        },
+        {
+            "binding": "alphax",
+            "database_name": "alphax",
+            "database_id": "970f567d-bec0-4573-8882-6e6426f09d2f",
+            "remote": true
+        }
+    ],
+    "durable_objects": {
+        "bindings": [
+            {
+                "name": "SESSIONS",
+                "class_name": "SessionCoordinator"
+            }
+        ]
+    },
+    "migrations": [
+        {
+            "tag": "v1",
+            "new_sqlite_classes": [
+                "SessionCoordinator"
+            ]
+        }
+    ]
+}
