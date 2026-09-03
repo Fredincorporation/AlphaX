@@ -331,14 +331,20 @@ export const useMediatorStore = create<MediatorState>((set, get) => {
           }
         }
       } catch (err: any) {
+        const message = err.message || 'Failed to inspect website';
+        const isAutomationChallenge = /anti-bot challenge|captcha|verify you are human|robot check|access denied/i.test(message);
+        const userMessage = isAutomationChallenge
+          ? 'This website is presenting an anti-bot challenge. It cannot be completed in the controlled Chromium window or through a popup.'
+          : message;
         set({
           status: 'error',
-          statusMessage: `Analysis failed: ${err.message}`,
+          statusMessage: isAutomationChallenge ? userMessage : `Analysis failed: ${message}`,
+          liveScreenshot: isAutomationChallenge ? null : get().liveScreenshot,
         });
         get().addToast({
           type: 'error',
-          title: 'Analysis Error',
-          message: err.message || 'Failed to inspect website',
+          title: isAutomationChallenge ? 'Anti-bot Challenge' : 'Analysis Error',
+          message: userMessage,
         });
       }
     },

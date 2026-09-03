@@ -1,6 +1,6 @@
 import React from 'react';
 import { useMediatorStore } from '../store/useMediatorStore';
-import { Globe, RefreshCw, Eye, ShieldCheck, Activity, Maximize2 } from 'lucide-react';
+import { Globe, RefreshCw, Eye, ShieldCheck, Activity, Maximize2, ShieldAlert } from 'lucide-react';
 
 export const LiveBrowserView: React.FC = () => {
   const {
@@ -13,6 +13,7 @@ export const LiveBrowserView: React.FC = () => {
   } = useMediatorStore();
 
   const isNavigating = status === 'navigating' || status === 'analyzing';
+  const isAutomationChallenge = status === 'error' && /anti-bot challenge|captcha|verify you are human|robot check|access denied/i.test(statusMessage);
 
   return (
     <div className="bg-card/70 border border-border/70 rounded-xl overflow-hidden shadow-lg flex flex-col h-[520px]">
@@ -41,7 +42,15 @@ export const LiveBrowserView: React.FC = () => {
 
       {/* Viewport Canvas / Image */}
       <div className="flex-1 bg-background relative overflow-hidden flex items-center justify-center">
-        {liveScreenshot ? (
+        {isAutomationChallenge ? (
+          <div className="flex flex-col items-center justify-center p-8 text-center max-w-lg">
+            <ShieldAlert className="h-10 w-10 text-amber-400 mb-3" />
+            <p className="text-sm font-semibold text-amber-300 mb-2">Anti-bot challenge detected</p>
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              This website is blocking automated access. The challenge cannot be completed in the controlled Chromium window or through a popup.
+            </p>
+          </div>
+        ) : liveScreenshot ? (
           <div className="relative w-full h-full flex items-center justify-center p-2 bg-slate-200/50 dark:bg-slate-950/40">
             <img
               src={`data:image/jpeg;base64,${liveScreenshot}`}
