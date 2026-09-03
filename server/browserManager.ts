@@ -1,6 +1,9 @@
-import { chromium, Browser, BrowserContext, Page } from 'playwright';
+import type { Browser, BrowserContext, Page } from 'playwright';
 import { validateNavigationTarget } from './navigationPolicy.js';
 import { PageAnalysisResult, PageElementInfo, FormInfo } from '../shared/types.js';
+
+process.env.PLAYWRIGHT_BROWSERS_PATH = '0';
+const { chromium } = await import('playwright');
 
 interface ManagedSession {
   sessionId: string;
