@@ -46,6 +46,21 @@ async function evaluateWithNavigationRetry<T>(page: Page, evaluate: () => Promis
   throw new Error('Page evaluation failed after navigation retries.');
 }
 
+function getActionSelector(selector: string, tool: WebMCPToolDefinition): string {
+  const isAmazonSearch = /amazon\./i.test(`${tool.domain} ${tool.annotations.sourceUrl || ''}`)
+    && /search/i.test(`${tool.name} ${tool.description}`);
+  if (isAmazonSearch && /twotabsearchtextbox/i.test(selector)) {
+    return '#twotabsearchtextbox:visible, input[name="field-keywords"]:visible, input[aria-label*="Search"]:visible';
+  }
+  return selector;
+}
+
+function getActionTimeout(step: ActionStep, tool: WebMCPToolDefinition): number {
+  const isAmazonSearch = /amazon\./i.test(`${tool.domain} ${tool.annotations.sourceUrl || ''}`)
+    && /search/i.test(`${tool.name} ${tool.description}`);
+  return isAmazonSearch ? Math.max(step.timeoutMs || 0, 20000) : (step.timeoutMs || 8000);
+}
+
 export class ActionExecutor {
   private pendingConfirmations: Map<string, { resolve: (val: boolean) => void; reject: (err: any) => void }> = new Map();
 
@@ -221,8 +236,9 @@ export class ActionExecutor {
           case 'fill':
           case 'type': {
             if (!step.selector) throw new Error('Missing selector for fill step');
-            await page.waitForSelector(step.selector, { timeout: step.timeoutMs || 8000 });
-            await page.fill(step.selector, stepValue);
+            const selector = getActionSelector(step.selector, tool);
+            await page.waitForSelector(selector, { timeout: getActionTimeout(step, tool) });
+            await page.fill(selector, stepValue);
             break;
           }
 
