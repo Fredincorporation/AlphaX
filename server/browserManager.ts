@@ -29,6 +29,10 @@ async function evaluatePageWithRetry<T>(page: Page, evaluate: () => Promise<T>):
   throw new Error('Page analysis evaluation failed after navigation retries.');
 }
 
+function isAutomationChallenge(url: string, title: string): boolean {
+  return /\/challenge(?:[/?#]|$)|splashui\/challenge|captcha|verify you are human|robot check|access denied/i.test(`${url} ${title}`);
+}
+
 export class BrowserManager {
   private browser: Browser | null = null;
   private sessions: Map<string, ManagedSession> = new Map();
@@ -103,6 +107,9 @@ export class BrowserManager {
     session.lastActive = Date.now();
 
     const title = await session.page.title();
+    if (isAutomationChallenge(session.currentUrl, title)) {
+      throw new Error(`Target site presented an anti-bot challenge at ${session.currentUrl}. Analysis cannot continue until the site allows browser automation.`);
+    }
     return { title, currentUrl: session.currentUrl };
   }
 
@@ -247,7 +254,7 @@ export class BrowserManager {
       }));
     } catch (error: any) {
       const message = error?.message || '';
-      const pageCrashed = /page crashed|target page, context or browser has been closed/i.test(message);
+      const pageCrashed = /page crashed|target crashed|target page, context or browser has been closed/i.test(message);
       if (allowRecovery && pageCrashed && url && url !== 'about:blank') {
         await this.closeSession(sessionId);
         const recoveredSession = await this.getOrCreateSession(sessionId);
