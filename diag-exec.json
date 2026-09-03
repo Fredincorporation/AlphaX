@@ -1,0 +1,48 @@
+{
+  "sessionId": "diag",
+  "tool": {
+    "id": "hn_get_top_stories",
+    "name": "get_top_stories",
+    "domain": "news.ycombinator.com",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "limit": {
+          "type": "number"
+        }
+      },
+      "required": []
+    },
+    "annotations": {
+      "readOnly": true,
+      "destructive": false,
+      "requiresConfirmation": false,
+      "category": "data_extraction",
+      "sourceUrl": "https://news.ycombinator.com"
+    },
+    "actionRecipe": [
+      {
+        "id": "s1",
+        "type": "navigate",
+        "url": "https://news.ycombinator.com"
+      },
+      {
+        "id": "s2",
+        "type": "evaluate_js",
+        "value": "Array.from(document.querySelectorAll('.athing')).slice(0,5).map(r=>({title:r.querySelector('.titleline a')?.innerText,url:r.querySelector('.titleline a')?.href,score:r.nextElementSibling?.querySelector('.score')?.innerText}))"
+      }
+    ],
+    "status": "approved"
+  },
+  "request": {
+    "id": "req_diag1",
+    "toolId": "hn_get_top_stories",
+    "toolName": "get_top_stories",
+    "parameters": {
+      "limit": 5
+    },
+    "origin": "diag",
+    "timestamp": "2026-09-03T00:00:00Z",
+    "requiresConfirmation": false
+  }
+}

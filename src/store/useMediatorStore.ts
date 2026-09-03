@@ -95,6 +95,40 @@ let ws: WebSocket | null = null;
 let wsPingTimer: any = null;
 let activeWsSession: string | null = null;
 let executionQueue = Promise.resolve();
+let wsReconnectTimer: any = null;
+let wsReconnectAttempt = 0;
+let wsIntentionalClose = false;
+
+const WS_MAX_RECONNECT_ATTEMPTS = 10;
+
+function clearWsReconnect() {
+  if (wsReconnectTimer) {
+    clearTimeout(wsReconnectTimer);
+    wsReconnectTimer = null;
+  }
+  wsReconnectAttempt = 0;
+}
+
+function scheduleReconnect(sessionId: string, get: () => MediatorState, set: (fn: Partial<MediatorState> | ((state: MediatorState) => Partial<MediatorState>)) => void) {
+  if (wsIntentionalClose || activeWsSession !== sessionId) return;
+  if (wsReconnectTimer) return;
+  if (wsReconnectAttempt >= WS_MAX_RECONNECT_ATTEMPTS) {
+    get().addToast({
+      type: 'error',
+      title: 'Live Stream Unavailable',
+      message: 'Could not re-establish the real-time connection. Run an analysis to retry.',
+    });
+    return;
+  }
+  const delay = Math.min(1000 * 2 ** wsReconnectAttempt, 30000);
+  wsReconnectAttempt += 1;
+  wsReconnectTimer = setTimeout(() => {
+    wsReconnectTimer = null;
+    if (!wsIntentionalClose && activeWsSession === sessionId) {
+      setupWebSocket(sessionId, get, set);
+    }
+  }, delay);
+}
 
 function setupWebSocket(sessionId: string, get: () => MediatorState, set: (fn: Partial<MediatorState> | ((state: MediatorState) => Partial<MediatorState>)) => void) {
   // If already connected for this session, don't duplicate
@@ -103,6 +137,7 @@ function setupWebSocket(sessionId: string, get: () => MediatorState, set: (fn: P
   }
 
   if (ws) {
+    wsIntentionalClose = true;
     try {
       ws.onclose = null;
       ws.onerror = null;
@@ -110,12 +145,14 @@ function setupWebSocket(sessionId: string, get: () => MediatorState, set: (fn: P
       ws.close();
     } catch { }
     ws = null;
+    wsIntentionalClose = false;
   }
 
   if (wsPingTimer) {
     clearInterval(wsPingTimer);
     wsPingTimer = null;
   }
+  clearWsReconnect();
 
   activeWsSession = sessionId;
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -125,14 +162,21 @@ function setupWebSocket(sessionId: string, get: () => MediatorState, set: (fn: P
   try {
     const socket = new WebSocket(wsUrl);
     ws = socket;
+    let lastPongAt = Date.now();
 
     socket.onopen = () => {
       if (ws !== socket) return;
+      wsReconnectAttempt = 0;
       set({ isLiveStreaming: true });
 
-      // Keepalive ping every 20 seconds to prevent proxy timeout
+      // Keepalive ping every 20 seconds to prevent proxy timeout;
+      // if a pong is not seen within 60s, treat the socket as dead.
       wsPingTimer = setInterval(() => {
         if (socket.readyState === WebSocket.OPEN) {
+          if (Date.now() - lastPongAt > 60000) {
+            try { socket.close(); } catch { }
+            return; // onclose will trigger reconnect
+          }
           try {
             socket.send(JSON.stringify({ type: 'ping' }));
           } catch { }
@@ -144,7 +188,9 @@ function setupWebSocket(sessionId: string, get: () => MediatorState, set: (fn: P
       if (ws !== socket) return;
       try {
         const data = JSON.parse(event.data);
-        if (data.type === 'status_update') {
+        if (data.type === 'pong') {
+          lastPongAt = Date.now();
+        } else if (data.type === 'status_update') {
           set({ status: data.status, statusMessage: data.message });
         } else if (data.type === 'screenshot_update') {
           set({ liveScreenshot: data.screenshotBase64 });
@@ -165,11 +211,13 @@ function setupWebSocket(sessionId: string, get: () => MediatorState, set: (fn: P
 
     socket.onclose = () => {
       if (ws === socket) {
+        ws = null;
         set({ isLiveStreaming: false });
         if (wsPingTimer) {
           clearInterval(wsPingTimer);
           wsPingTimer = null;
         }
+        scheduleReconnect(sessionId, get, set);
       }
     };
 
@@ -179,12 +227,25 @@ function setupWebSocket(sessionId: string, get: () => MediatorState, set: (fn: P
       }
     };
   } catch (err) {
-    // Handled gracefully
+    // Handled gracefully - retry via reconnect schedule
+    scheduleReconnect(sessionId, get, set);
   }
 }
 
 export const useMediatorStore = create<MediatorState>((set, get) => {
-  const defaultSessionId = `session_${Math.random().toString(36).slice(2, 9)}`;
+  // Persist the session across page refreshes so the WebSocket session and
+  // server-side execution history are not orphaned.
+  const SESSION_STORAGE_KEY = 'alphax-session-id';
+  let defaultSessionId: string;
+  try {
+    defaultSessionId = localStorage.getItem(SESSION_STORAGE_KEY) || '';
+    if (!defaultSessionId) {
+      defaultSessionId = `session_${Math.random().toString(36).slice(2, 9)}`;
+      localStorage.setItem(SESSION_STORAGE_KEY, defaultSessionId);
+    }
+  } catch {
+    defaultSessionId = `session_${Math.random().toString(36).slice(2, 9)}`;
+  }
   const initialTheme = (typeof window !== 'undefined' && localStorage.getItem('alphax-theme') === 'light') ? 'light' : 'dark';
 
   return {
