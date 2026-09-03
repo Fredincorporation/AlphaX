@@ -5,7 +5,7 @@ import { PageAnalysisResult, PageElementInfo, FormInfo } from '../shared/types.j
 process.env.PLAYWRIGHT_BROWSERS_PATH = '0';
 const { chromium } = await import('playwright');
 
-const MAX_SESSIONS = 4;
+const MAX_SESSIONS = Math.max(1, Math.min(4, Number(process.env.MAX_BROWSER_SESSIONS) || 1));
 const SESSION_IDLE_MS = 10 * 60 * 1000;
 
 interface ManagedSession {
@@ -75,6 +75,8 @@ export class BrowserManager {
       return existing;
     }
 
+    await this.evictSessionsIfNeeded();
+
     const browser = await this.initBrowser();
     const context = await browser.newContext({
       viewport: { width: 1280, height: 800 },
@@ -99,8 +101,6 @@ export class BrowserManager {
       currentUrl: 'about:blank',
       lastActive: Date.now(),
     };
-
-    await this.evictSessionsIfNeeded();
 
     this.sessions.set(sessionId, session);
     return session;
@@ -166,6 +166,16 @@ export class BrowserManager {
   async getPage(sessionId: string): Promise<Page> {
     const session = await this.getOrCreateSession(sessionId);
     return session.page;
+  }
+
+  getResourceStats(): { sessions: number; maxSessions: number; heapUsedMb: number; rssMb: number } {
+    const memory = process.memoryUsage();
+    return {
+      sessions: this.sessions.size,
+      maxSessions: MAX_SESSIONS,
+      heapUsedMb: Math.round(memory.heapUsed / 1024 / 1024),
+      rssMb: Math.round(memory.rss / 1024 / 1024),
+    };
   }
 
   async analyzePage(sessionId: string, allowRecovery = true): Promise<PageAnalysisResult> {
@@ -332,6 +342,11 @@ export class BrowserManager {
         await session.context.close();
       } catch { }
       this.sessions.delete(sessionId);
+      if (this.sessions.size === 0 && this.browser) {
+        const browser = this.browser;
+        this.browser = null;
+        await browser.close().catch(() => undefined);
+      }
     }
   }
 

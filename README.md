@@ -68,6 +68,8 @@ GEMINI_API_KEY=your-gemini-key
 
 # Server
 PORT=3001
+# Keep this at 1 on small hosted instances; increase only with sufficient RAM.
+MAX_BROWSER_SESSIONS=1
 
 # Frontend-to-backend URLs for a separately deployed frontend
 VITE_API_URL=https://your-backend.example.com
@@ -96,6 +98,7 @@ Open `http://localhost:5173`.
 
 Useful local endpoints:
 
+- `GET /api/health` - process memory, uptime, and active browser-session metrics
 - `GET /api/samples` - available sample targets
 - `POST /api/analyze` - navigate, analyze, and generate tools
 - `GET /api/tools` - list stored tools

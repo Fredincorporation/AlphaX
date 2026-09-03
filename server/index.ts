@@ -22,6 +22,10 @@ const PORT = process.env.PORT || 3001;
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 
+app.get('/api/health', (_req, res) => {
+  res.json({ ok: true, uptimeSeconds: Math.round(process.uptime()), ...browserManager.getResourceStats() });
+});
+
 // Populate prebuilt recipes if not already stored
 for (const [domain, tools] of Object.entries(PREBUILT_RECIPES)) {
   const existing = persistenceStore.getToolsByDomain(domain);
