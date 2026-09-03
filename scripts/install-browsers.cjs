@@ -1,7 +1,9 @@
 /**
  * Installs Playwright's Chromium browser after `npm install`.
- * Skipped on Vercel (frontend-only, no apt-get, doesn't need a browser).
- * Required on Render (backend uses Playwright for browser automation).
+ * Skipped on Vercel (frontend-only, no browser is needed).
+ * Installs only the browser by default because hosted build environments may
+ * not allow the privileged package-manager step used by --with-deps.
+ * Set PLAYWRIGHT_INSTALL_DEPS=true when system dependencies can be installed.
  * Note: .cjs extension because package.json uses "type": "module".
  */
 if (process.env.VERCEL) {
@@ -10,7 +12,13 @@ if (process.env.VERCEL) {
 }
 
 const { spawnSync } = require('child_process');
-const result = spawnSync('npx playwright install --with-deps chromium', {
+const installDeps = process.env.PLAYWRIGHT_INSTALL_DEPS === 'true';
+const command = installDeps
+  ? 'npx playwright install --with-deps chromium'
+  : 'npx playwright install chromium';
+
+console.log(`[install-browsers] Running: ${command}`);
+const result = spawnSync(command, {
   stdio: 'inherit',
   shell: true,
 });
