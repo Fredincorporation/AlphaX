@@ -531,7 +531,7 @@ export const AgentPlayground: React.FC = () => {
                   <div>
                     <div className={`flex items-center gap-2 text-xs font-bold ${isSuccessful ? 'text-emerald-300' : 'text-rose-300'}`}>
                       {isSuccessful ? <Check className="h-4 w-4" /> : <span>!</span>}
-                      {isSuccessful ? 'Tool completed' : 'Execution needs attention'}
+                      {isSuccessful ? 'Tool completed' : /anti-bot challenge|captcha|validateCaptcha/i.test(lastResult.error || '') ? 'Anti-bot challenge detected' : 'Execution needs attention'}
                       <span className="font-normal text-muted-foreground">in {lastResult.executionTimeMs}ms</span>
                     </div>
                     {!isSuccessful && <p className="mt-2 text-sm text-rose-200">{lastResult.error || 'The tool did not complete successfully.'}</p>}

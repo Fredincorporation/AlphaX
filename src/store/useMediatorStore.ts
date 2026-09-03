@@ -497,11 +497,15 @@ export const useMediatorStore = create<MediatorState>((set, get) => {
           throw new Error(data.error || `Tool execution failed with HTTP ${res.status}.`);
         }
         const executionResponse = data as ToolExecutionResponse;
+        const executionFailed = executionResponse.status !== 'success';
+        const isAutomationChallenge = /anti-bot challenge|captcha|validateCaptcha|verify you are human|robot check|access denied/i.test(executionResponse.error || '');
 
         set((s) => ({
           activeExecutionTool: null,
-          status: 'ready',
-          statusMessage: executionResponse.status === 'success' ? `Tool "${tool.name}" executed successfully!` : `Tool "${tool.name}" ended with status: ${executionResponse.status}`,
+          status: executionFailed ? 'error' : 'ready',
+          statusMessage: isAutomationChallenge
+            ? 'Anti-bot challenge detected. The site cannot be completed in the controlled Chromium window or through a popup.'
+            : executionResponse.status === 'success' ? `Tool "${tool.name}" executed successfully!` : `Tool "${tool.name}" ended with status: ${executionResponse.status}`,
           recentResults: [executionResponse, ...s.recentResults.slice(0, 9)],
           liveScreenshot: executionResponse.finalScreenshotBase64 || s.liveScreenshot,
         }));
@@ -523,8 +527,10 @@ export const useMediatorStore = create<MediatorState>((set, get) => {
         } else {
           get().addToast({
             type: 'error',
-            title: 'Execution Notice',
-            message: executionResponse.error || `Execution ended with status: ${executionResponse.status}`,
+            title: isAutomationChallenge ? 'Anti-bot Challenge' : 'Execution Notice',
+            message: isAutomationChallenge
+              ? 'This website is blocking automated access. The challenge cannot be completed in the controlled Chromium window or through a popup.'
+              : executionResponse.error || `Execution ended with status: ${executionResponse.status}`,
           });
         }
 

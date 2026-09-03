@@ -403,8 +403,12 @@ export class ActionExecutor {
       const stepContext = executedStepsCount < tool.actionRecipe.length
         ? tool.actionRecipe[executedStepsCount]
         : undefined;
-      const errorMessage = stepContext
-        ? `Step ${executedStepsCount + 1} (${stepContext.type}${stepContext.selector ? ` ${stepContext.selector}` : ''}) failed on ${page.url()}: ${error.message}`
+      const pageUrl = page.url();
+      const isAutomationChallenge = /challenge|captcha|validateCaptcha|verify you are human|robot check|access denied/i.test(`${pageUrl} ${error.message}`);
+      const errorMessage = isAutomationChallenge
+        ? 'Target site presented an anti-bot challenge. It cannot be completed in the controlled Chromium window or through a popup.'
+        : stepContext
+        ? `Step ${executedStepsCount + 1} (${stepContext.type}${stepContext.selector ? ` ${stepContext.selector}` : ''}) failed on ${pageUrl}: ${error.message}`
         : error.message;
       addLog('error', `Execution failed: ${errorMessage}`);
       const errScreenshot = await browserManager.captureScreenshot(sessionId).catch(() => undefined);
