@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useMediatorStore } from '../store/useMediatorStore';
 import { ThemeToggle } from './ThemeToggle';
+import { apiUrl } from '../lib/api';
 import { Shield, ShieldAlert, Cpu, Key, Trash2, Globe, Radio, Sparkles, CheckCircle2 } from 'lucide-react';
 
 export const Header: React.FC = () => {
@@ -22,7 +23,7 @@ export const Header: React.FC = () => {
 
   const handleSaveKey = async () => {
     try {
-      const res = await fetch('/api/config/llm-key', {
+      const res = await fetch(apiUrl('/api/config/llm-key'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ apiKey: apiKeyInput }),
@@ -94,8 +95,8 @@ export const Header: React.FC = () => {
             onClick={() => setSupervisionMode('strict')}
             title="Strict: Confirmation modal required for every single tool call"
             className={`px-2.5 py-1 rounded-md font-medium transition-all ${supervisionMode === 'strict'
-                ? 'bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-500/30 font-semibold'
-                : 'text-muted-foreground hover:text-foreground'
+              ? 'bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-500/30 font-semibold'
+              : 'text-muted-foreground hover:text-foreground'
               }`}
           >
             Strict
@@ -104,8 +105,8 @@ export const Header: React.FC = () => {
             onClick={() => setSupervisionMode('supervised')}
             title="Supervised (Recommended): Read-only calls proceed automatically; mutations/writes ask for confirmation"
             className={`px-2.5 py-1 rounded-md font-medium transition-all ${supervisionMode === 'supervised'
-                ? 'bg-cyan-500/20 text-cyan-700 dark:text-cyan-300 border border-cyan-500/40 font-semibold'
-                : 'text-muted-foreground hover:text-foreground'
+              ? 'bg-cyan-500/20 text-cyan-700 dark:text-cyan-300 border border-cyan-500/40 font-semibold'
+              : 'text-muted-foreground hover:text-foreground'
               }`}
           >
             Supervised
@@ -114,8 +115,8 @@ export const Header: React.FC = () => {
             onClick={() => setSupervisionMode('autonomous')}
             title="Autonomous: Fast automatic tool execution without confirmation gates"
             className={`px-2.5 py-1 rounded-md font-medium transition-all ${supervisionMode === 'autonomous'
-                ? 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border border-emerald-500/40 font-semibold'
-                : 'text-muted-foreground hover:text-foreground'
+              ? 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border border-emerald-500/40 font-semibold'
+              : 'text-muted-foreground hover:text-foreground'
               }`}
           >
             Autonomous

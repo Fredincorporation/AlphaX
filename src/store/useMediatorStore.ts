@@ -8,6 +8,7 @@ import {
   ToolExecutionRequest
 } from '@shared/types';
 import { webmcpBridge } from '../lib/webmcpBridge';
+import { WS_BASE, apiUrl } from '../lib/api';
 
 export interface ToastNotification {
   id: string;
@@ -117,7 +118,7 @@ function setupWebSocket(sessionId: string, get: () => MediatorState, set: (fn: P
   activeWsSession = sessionId;
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   const host = window.location.host;
-  const wsUrl = `${protocol}//${host}/ws?sessionId=${sessionId}`;
+  const wsUrl = `${WS_BASE || `${protocol}//${host}`}/ws?sessionId=${sessionId}`;
 
   try {
     const socket = new WebSocket(wsUrl);
@@ -286,7 +287,7 @@ export const useMediatorStore = create<MediatorState>((set, get) => {
       });
 
       try {
-        const res = await fetch('/api/analyze', {
+        const res = await fetch(apiUrl('/api/analyze'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -367,7 +368,7 @@ export const useMediatorStore = create<MediatorState>((set, get) => {
 
       // Persist to server
       try {
-        await fetch('/api/tools/approve', {
+        await fetch(apiUrl('/api/tools/approve'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -403,7 +404,7 @@ export const useMediatorStore = create<MediatorState>((set, get) => {
       }
 
       try {
-        await fetch('/api/tools/approve', {
+        await fetch(apiUrl('/api/tools/approve'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -462,7 +463,7 @@ export const useMediatorStore = create<MediatorState>((set, get) => {
       };
 
       try {
-        const res = await fetch('/api/tools/execute', {
+        const res = await fetch(apiUrl('/api/tools/execute'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -539,7 +540,7 @@ export const useMediatorStore = create<MediatorState>((set, get) => {
     revokeDomainTools: async (domain?: string) => {
       const targetDomain = domain || get().currentDomain;
       try {
-        await fetch(`/api/tools/${encodeURIComponent(targetDomain)}`, { method: 'DELETE' });
+        await fetch(apiUrl(`/api/tools/${encodeURIComponent(targetDomain)}`), { method: 'DELETE' });
         webmcpBridge.unregisterAll();
         set({ approvedTools: [], proposedTools: [] });
         get().addToast({
@@ -559,7 +560,7 @@ export const useMediatorStore = create<MediatorState>((set, get) => {
 
     fetchAuditHistory: async () => {
       try {
-        const res = await fetch('/api/history?limit=30');
+        const res = await fetch(apiUrl('/api/history?limit=30'));
         const data = await res.json();
         if (data.logs) {
           set({ auditHistory: data.logs });

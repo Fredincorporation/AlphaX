@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useMediatorStore } from '../store/useMediatorStore';
 import { Search, Loader2, ArrowRight, Bookmark, Compass, Sparkles } from 'lucide-react';
+import { apiUrl } from '../lib/api';
 
 export const UrlInputBar: React.FC = () => {
   const { targetUrl, setTargetUrl, analyzeUrl, status, currentDomain } = useMediatorStore();
@@ -9,7 +10,7 @@ export const UrlInputBar: React.FC = () => {
   const isAnalyzing = status === 'analyzing' || status === 'navigating' || status === 'generating';
 
   useEffect(() => {
-    fetch('/api/samples')
+    fetch(apiUrl('/api/samples'))
       .then(res => res.json())
       .then(data => {
         if (data.samples) setSamples(data.samples);
