@@ -1,4 +1,4 @@
-import { Page } from 'playwright';
+import { Locator, Page } from 'playwright';
 import {
   WebMCPToolDefinition,
   ToolExecutionRequest,
@@ -66,6 +66,22 @@ function getFillSelector(selector: string): string {
     return `input${selector}:visible, textarea${selector}:visible, select${selector}:visible`;
   }
   return selector;
+}
+
+export async function resolveVisibleTarget(page: Page, selector: string, timeoutMs: number): Promise<Locator> {
+  const locator = page.locator(selector);
+  const deadline = Date.now() + timeoutMs;
+
+  while (Date.now() < deadline) {
+    const count = await locator.count();
+    for (let index = 0; index < count; index++) {
+      const candidate = locator.nth(index);
+      if (await candidate.isVisible()) return candidate;
+    }
+    await page.waitForTimeout(Math.min(100, Math.max(1, deadline - Date.now())));
+  }
+
+  throw new Error(`Timed out waiting for a visible element matching "${selector}".`);
 }
 
 export class ActionExecutor {
@@ -236,15 +252,15 @@ export class ActionExecutor {
 
           case 'click': {
             if (!step.selector) throw new Error('Missing selector for click step');
-            await page.waitForSelector(step.selector, { timeout: step.timeoutMs || 8000 });
+            const target = await resolveVisibleTarget(page, step.selector, step.timeoutMs || 8000);
             if (step.waitForNavigation) {
               await performNavigationAction(
                 page,
-                () => page.click(step.selector!),
+                () => target.click(),
                 step.timeoutMs || 8000
               );
             } else {
-              await page.click(step.selector);
+              await target.click();
             }
             break;
           }
@@ -253,44 +269,47 @@ export class ActionExecutor {
           case 'type': {
             if (!step.selector) throw new Error('Missing selector for fill step');
             const selector = getFillSelector(getActionSelector(step.selector, tool));
-            await page.waitForSelector(selector, { timeout: getActionTimeout(step, tool) });
-            await page.locator(selector).first().fill(stepValue);
+            const target = await resolveVisibleTarget(page, selector, getActionTimeout(step, tool));
+            await target.fill(stepValue);
             break;
           }
 
           case 'select': {
             if (!step.selector) throw new Error('Missing selector for select step');
-            await page.waitForSelector(step.selector, { timeout: step.timeoutMs || 8000 });
-            await page.selectOption(step.selector, stepValue);
+            const target = await resolveVisibleTarget(page, step.selector, step.timeoutMs || 8000);
+            await target.selectOption(stepValue);
             break;
           }
 
           case 'check': {
             if (!step.selector) throw new Error('Missing selector for check step');
-            await page.waitForSelector(step.selector, { timeout: step.timeoutMs || 8000 });
-            await page.check(step.selector);
+            const target = await resolveVisibleTarget(page, step.selector, step.timeoutMs || 8000);
+            await target.check();
             break;
           }
 
           case 'uncheck': {
             if (!step.selector) throw new Error('Missing selector for uncheck step');
-            await page.waitForSelector(step.selector, { timeout: step.timeoutMs || 8000 });
-            await page.uncheck(step.selector);
+            const target = await resolveVisibleTarget(page, step.selector, step.timeoutMs || 8000);
+            await target.uncheck();
             break;
           }
 
           case 'press': {
             const keyToPress = step.key || stepValue || 'Enter';
+            const target = step.selector
+              ? await resolveVisibleTarget(page, step.selector, step.timeoutMs || 8000)
+              : undefined;
             if (step.waitForNavigation) {
               await performNavigationAction(
                 page,
-                () => step.selector
-                  ? page.press(step.selector, keyToPress)
+                () => target
+                  ? target.press(keyToPress)
                   : page.keyboard.press(keyToPress),
                 step.timeoutMs || 8000
               );
-            } else if (step.selector) {
-              await page.press(step.selector, keyToPress);
+            } else if (target) {
+              await target.press(keyToPress);
             } else {
               await page.keyboard.press(keyToPress);
             }
@@ -299,7 +318,8 @@ export class ActionExecutor {
 
           case 'hover': {
             if (!step.selector) throw new Error('Missing selector for hover step');
-            await page.hover(step.selector);
+            const target = await resolveVisibleTarget(page, step.selector, step.timeoutMs || 8000);
+            await target.hover();
             break;
           }
 

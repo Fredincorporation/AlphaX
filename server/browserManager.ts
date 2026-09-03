@@ -41,6 +41,7 @@ export class BrowserManager {
 
   constructor() {
     this.cleanupInterval = setInterval(() => this.cleanupStaleSessions(), 60000);
+    this.cleanupInterval.unref();
   }
 
   async initBrowser(): Promise<Browser> {
