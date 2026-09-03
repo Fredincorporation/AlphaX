@@ -174,6 +174,15 @@ export class ActionExecutor {
     let executedStepsCount = 0;
 
     try {
+      const firstStep = tool.actionRecipe[0];
+      const sourceUrl = tool.annotations.sourceUrl;
+      const pageIsBlank = page.url() === 'about:blank';
+      const recipeStartsWithoutNavigation = firstStep?.type !== 'navigate';
+      if (sourceUrl && pageIsBlank && recipeStartsWithoutNavigation) {
+        addLog('info', `Restoring tool source page before ${firstStep?.type || 'execution'}: ${sourceUrl}`);
+        await browserManager.navigateTo(sessionId, sourceUrl);
+      }
+
       for (let i = 0; i < tool.actionRecipe.length; i++) {
         const step = tool.actionRecipe[i];
         const stepNum = i + 1;
