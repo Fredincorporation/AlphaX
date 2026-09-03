@@ -5,6 +5,9 @@ import { PageAnalysisResult, PageElementInfo, FormInfo } from '../shared/types.j
 process.env.PLAYWRIGHT_BROWSERS_PATH = '0';
 const { chromium } = await import('playwright');
 
+const MAX_SESSIONS = 4;
+const SESSION_IDLE_MS = 10 * 60 * 1000;
+
 interface ManagedSession {
   sessionId: string;
   context: BrowserContext;
@@ -97,8 +100,18 @@ export class BrowserManager {
       lastActive: Date.now(),
     };
 
+    await this.evictSessionsIfNeeded();
+
     this.sessions.set(sessionId, session);
     return session;
+  }
+
+  private async evictSessionsIfNeeded(): Promise<void> {
+    if (this.sessions.size < MAX_SESSIONS) return;
+
+    const oldest = [...this.sessions.values()]
+      .sort((left, right) => left.lastActive - right.lastActive)[0];
+    if (oldest) await this.closeSession(oldest.sessionId);
   }
 
   async navigateTo(sessionId: string, url: string, allowRecovery = true): Promise<{ title: string; currentUrl: string }> {
@@ -325,7 +338,7 @@ export class BrowserManager {
   private cleanupStaleSessions(): void {
     const now = Date.now();
     for (const [sessionId, session] of this.sessions.entries()) {
-      if (now - session.lastActive > 30 * 60 * 1000) { // 30 minutes
+      if (now - session.lastActive > SESSION_IDLE_MS) {
         this.closeSession(sessionId);
       }
     }

@@ -2,6 +2,19 @@ import { WebMCPToolDefinition, ToolExecutionResponse } from '../shared/types.js'
 import { supabaseServer, isServerSupabaseConfigured } from './supabaseServer.js';
 import { PREBUILT_RECIPES } from './prebuiltRecipes.js';
 
+const MAX_CACHED_VALUE_LENGTH = 20000;
+
+function cacheSafeValue(value: any): any {
+  if (value === undefined || value === null) return value;
+  try {
+    const serialized = JSON.stringify(value);
+    if (serialized.length <= MAX_CACHED_VALUE_LENGTH) return value;
+    return `${serialized.slice(0, MAX_CACHED_VALUE_LENGTH)}... [truncated]`;
+  } catch {
+    return '[unavailable]';
+  }
+}
+
 export interface DomainRecord {
   id: string;
   domain: string;
@@ -57,6 +70,8 @@ export interface AuditLogRecord {
 
 export class SupabasePersistenceStore {
   // In-memory cache & fallback store for zero-latency local operations
+  private static readonly MAX_MEMORY_EXECUTIONS = 200;
+  private static readonly MAX_MEMORY_AUDIT_LOGS = 1000;
   private memoryDomains: Map<string, DomainRecord> = new Map();
   private memoryTools: Map<string, WebMCPToolDefinition> = new Map();
   private memoryExecutions: ToolExecutionRecord[] = [];
@@ -277,8 +292,8 @@ export class SupabasePersistenceStore {
       domain,
       origin,
       status: res.status,
-      request_params: params,
-      result: res.result || null,
+      request_params: cacheSafeValue(params),
+      result: cacheSafeValue(res.result) || null,
       error: res.error || undefined,
       execution_time_ms: res.executionTimeMs,
       confirmed_by_human: Boolean(res.provenance?.confirmedByHuman),
@@ -287,9 +302,7 @@ export class SupabasePersistenceStore {
     };
 
     this.memoryExecutions.unshift(record);
-    if (this.memoryExecutions.length > 200) {
-      this.memoryExecutions.pop();
-    }
+    this.memoryExecutions.length = Math.min(this.memoryExecutions.length, SupabasePersistenceStore.MAX_MEMORY_EXECUTIONS);
 
     // Save individual step logs
     if (res.logs && res.logs.length > 0) {
@@ -301,11 +314,13 @@ export class SupabasePersistenceStore {
           level: log.level,
           message: log.message,
           step_index: log.stepIndex,
-          data: log.data,
+          data: cacheSafeValue(log.data),
           created_at: log.timestamp,
         });
       }
     }
+
+    this.memoryAuditLogs.length = Math.min(this.memoryAuditLogs.length, SupabasePersistenceStore.MAX_MEMORY_AUDIT_LOGS);
 
     if (supabaseServer) {
       try {
