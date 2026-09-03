@@ -2,6 +2,7 @@
  * Installs Playwright's Chromium browser after `npm install`.
  * Skipped on Vercel (frontend-only, no apt-get, doesn't need a browser).
  * Required on Render (backend uses Playwright for browser automation).
+ * Note: .cjs extension because package.json uses "type": "module".
  */
 if (process.env.VERCEL) {
   console.log('[install-browsers] Skipping Playwright install on Vercel build.');

@@ -11,7 +11,7 @@
     "start": "node dist/server/index.js",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test tests/*.test.ts",
-    "postinstall": "node scripts/install-browsers.js"
+    "postinstall": "node scripts/install-browsers.cjs"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.6",
