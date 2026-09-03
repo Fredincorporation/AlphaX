@@ -51,9 +51,14 @@ export class BrowserManager {
           '--disable-dev-shm-usage',
           '--no-sandbox',
           '--disable-setuid-sandbox',
+          '--disable-gpu',
           '--disable-web-security',
           '--disable-features=IsolateOrigins,site-per-process',
         ],
+      });
+      const browser = this.browser;
+      browser.on('disconnected', () => {
+        if (this.browser === browser) this.browser = null;
       });
     }
     return this.browser;
@@ -73,6 +78,14 @@ export class BrowserManager {
     });
 
     const page = await context.newPage();
+    await page.route('**/*', async (route) => {
+      const resourceType = route.request().resourceType();
+      if (resourceType === 'media' || resourceType === 'font' || resourceType === 'eventsource') {
+        await route.abort();
+      } else {
+        await route.continue();
+      }
+    });
     page.setDefaultTimeout(20000);
 
     const session: ManagedSession = {
