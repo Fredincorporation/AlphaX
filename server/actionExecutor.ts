@@ -400,7 +400,13 @@ export class ActionExecutor {
         },
       };
     } catch (error: any) {
-      addLog('error', `Execution failed: ${error.message}`);
+      const stepContext = executedStepsCount < tool.actionRecipe.length
+        ? tool.actionRecipe[executedStepsCount]
+        : undefined;
+      const errorMessage = stepContext
+        ? `Step ${executedStepsCount + 1} (${stepContext.type}${stepContext.selector ? ` ${stepContext.selector}` : ''}) failed on ${page.url()}: ${error.message}`
+        : error.message;
+      addLog('error', `Execution failed: ${errorMessage}`);
       const errScreenshot = await browserManager.captureScreenshot(sessionId).catch(() => undefined);
 
       return {
@@ -408,7 +414,7 @@ export class ActionExecutor {
         requestId: request.id,
         toolName: tool.name,
         status: 'error',
-        error: error.message,
+        error: errorMessage,
         executionTimeMs: Date.now() - startTime,
         logs,
         finalScreenshotBase64: errScreenshot,

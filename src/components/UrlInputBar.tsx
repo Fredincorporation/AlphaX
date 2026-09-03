@@ -7,7 +7,7 @@ export const UrlInputBar: React.FC = () => {
   const { targetUrl, setTargetUrl, analyzeUrl, status, currentDomain } = useMediatorStore();
   const [samples, setSamples] = useState<{ name: string; url: string; description: string; domain: string }[]>([]);
   const [samplesLoading, setSamplesLoading] = useState(true);
-  const isAnalyzing = status === 'analyzing' || status === 'navigating' || status === 'generating';
+  const isAnalyzing = status === 'analyzing' || status === 'navigating' || status === 'generating' || status === 'executing';
 
   useEffect(() => {
     fetch(apiUrl('/api/samples'))
