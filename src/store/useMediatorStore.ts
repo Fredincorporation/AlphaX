@@ -287,14 +287,26 @@ export const useMediatorStore = create<MediatorState>((set, get) => {
       });
 
       try {
-        const res = await fetch(apiUrl('/api/analyze'), {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            url: urlToAnalyze,
-            sessionId: state.sessionId,
-          }),
-        });
+        let res: Response | undefined;
+        for (let attempt = 0; attempt < 2; attempt++) {
+          try {
+            res = await fetch(apiUrl('/api/analyze'), {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                url: urlToAnalyze,
+                sessionId: state.sessionId,
+              }),
+            });
+            break;
+          } catch (error) {
+            if (attempt === 0) await new Promise(resolve => setTimeout(resolve, 1500));
+          }
+        }
+
+        if (!res) {
+          throw new Error(`AlphaX could not reach the backend while analyzing ${urlToAnalyze}. The server may be restarting after a browser crash; please retry in a moment.`);
+        }
 
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Failed to analyze page');
