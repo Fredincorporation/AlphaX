@@ -17,6 +17,27 @@ WEBMCP TOOL PRINCIPLES:
 OUTPUT FORMAT:
 Return a JSON object with a "tools" array containing WebMCPToolDefinition objects.`;
 
+export function findSearchInput(elements: PageAnalysisResult['interactiveElements']) {
+  return elements
+    .filter((element) => {
+      const type = (element.type || 'text').toLowerCase();
+      return element.tagName === 'input'
+        && element.isVisible
+        && element.isEnabled
+        && !['button', 'hidden', 'image', 'reset', 'submit'].includes(type);
+    })
+    .map((element) => {
+      const attributes = `${element.type || ''} ${element.name || ''} ${element.placeholder || ''} ${element.ariaLabel || ''}`.toLowerCase();
+      let score = 0;
+      if (element.type?.toLowerCase() === 'search') score += 10;
+      if (/search|query|keyword/.test(attributes)) score += 5;
+      if (element.name?.toLowerCase() === 'q') score += 4;
+      return { element, score };
+    })
+    .filter(({ score }) => score > 0)
+    .sort((left, right) => right.score - left.score)[0]?.element;
+}
+
 export class LLMToolGenerator {
   private groqApiKey: string | null = null;
   private geminiApiKey: string | null = null;
@@ -258,9 +279,7 @@ Respond only with JSON: {"tools": [...]}`;
     });
 
     // 2. Search Tools (from search forms or search inputs)
-    const searchInput = analysis.interactiveElements.find(
-      e => (e.tagName === 'input' && (e.type === 'search' || (e.name && e.name.toLowerCase().includes('search')) || (e.placeholder && e.placeholder.toLowerCase().includes('search')) || (e.ariaLabel && e.ariaLabel.toLowerCase().includes('search'))))
-    );
+    const searchInput = findSearchInput(analysis.interactiveElements);
 
     if (searchInput) {
       tools.push({

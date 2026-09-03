@@ -84,6 +84,22 @@ export async function resolveVisibleTarget(page: Page, selector: string, timeout
   throw new Error(`Timed out waiting for a visible element matching "${selector}".`);
 }
 
+async function resolveEditableTarget(page: Page, selector: string, timeoutMs: number): Promise<Locator> {
+  const locator = page.locator(selector);
+  const deadline = Date.now() + timeoutMs;
+
+  while (Date.now() < deadline) {
+    const count = await locator.count();
+    for (let index = 0; index < count; index++) {
+      const candidate = locator.nth(index);
+      if (await candidate.isVisible() && await candidate.isEditable()) return candidate;
+    }
+    await page.waitForTimeout(Math.min(100, Math.max(1, deadline - Date.now())));
+  }
+
+  throw new Error(`Timed out waiting for an editable element matching "${selector}".`);
+}
+
 export class ActionExecutor {
   private pendingConfirmations: Map<string, { resolve: (val: boolean) => void; reject: (err: any) => void }> = new Map();
 
@@ -269,7 +285,7 @@ export class ActionExecutor {
           case 'type': {
             if (!step.selector) throw new Error('Missing selector for fill step');
             const selector = getFillSelector(getActionSelector(step.selector, tool));
-            const target = await resolveVisibleTarget(page, selector, getActionTimeout(step, tool));
+            const target = await resolveEditableTarget(page, selector, getActionTimeout(step, tool));
             await target.fill(stepValue);
             break;
           }
