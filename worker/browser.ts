@@ -4,6 +4,74 @@ import type { Env } from './env';
 
 const ACTION_TIMEOUT = 8000;
 
+/**
+ * Force the English (en-US) version of every site the automation browser visits.
+ *
+ * Sites pick their language from (in rough order of influence):
+ *  1. URL params (`hl=`, `?lang=`, `setlang=`) — handled by `withEnglishUrlParams`
+ *  2. Accept-Language HTTP header
+ *  3. `navigator.language(s)` (client-side scripts like Google's)
+ *  4. Cookies (e.g. Google's NID/SPORTS prefs, Wikipedia's language subdomain)
+ *
+ * This helper pins 2 and 3 to en-US so every page render and client-side
+ * redirect lands on English content.
+ */
+async function configureEnglishLocale(page: Page): Promise<void> {
+  // 2. Every outgoing request advertises English (US) as the preferred language.
+  await page.setExtraHTTPHeaders({
+    'Accept-Language': 'en-US,en;q=0.9',
+  });
+
+  // 3. Patch navigator.language(s) and Intl defaults before any site script runs,
+  //    so language-detection JS (Google, Yahoo, etc.) sees an English browser.
+  await page.evaluateOnNewDocument(() => {
+    try {
+      Object.defineProperty(navigator, 'language', { get: () => 'en-US', configurable: true });
+      Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'], configurable: true });
+      const OriginalDateTimeFormat = Intl.DateTimeFormat;
+      Object.defineProperty(Intl, 'DateTimeFormat', {
+        value: class extends OriginalDateTimeFormat {
+          constructor(...args: unknown[]) {
+            if (args.length === 0 || args[0] === undefined) args[0] = 'en-US';
+            super(...(args as ConstructorParameters<typeof OriginalDateTimeFormat>));
+          }
+          resolvedOptions() {
+            const options = super.resolvedOptions();
+            if (!options.locale || options.locale === 'und') options.locale = 'en-US';
+            return options;
+          }
+        },
+        writable: true,
+        configurable: true,
+      });
+    } catch {
+      // Best-effort: some pages may seal these objects.
+    }
+  });
+}
+
+/** Rewrite a URL to include site-specific English-forcing parameters. */
+function withEnglishUrlParams(url: string): string {
+  try {
+    const parsed = new URL(url);
+    if (/google\./i.test(parsed.hostname)) {
+      parsed.searchParams.set('hl', 'en');
+      if (parsed.pathname === '/' || parsed.pathname === '/search') parsed.searchParams.set('gl', 'us');
+    }
+    if (/yahoo\./i.test(parsed.hostname)) parsed.searchParams.set('lang', 'en-US');
+    if (/wikipedia\.org$/i.test(parsed.hostname) && !parsed.hostname.startsWith('en.')) {
+      parsed.hostname = `en.${parsed.hostname}`;
+    }
+    if (/bing\./i.test(parsed.hostname)) {
+      parsed.searchParams.set('setlang', 'en');
+      parsed.searchParams.set('cc', 'US');
+    }
+    return parsed.toString();
+  } catch {
+    return url;
+  }
+}
+
 function toBase64(bytes: Uint8Array): string {
   let binary = '';
   const chunkSize = 0x8000;
@@ -58,7 +126,7 @@ async function runStep(page: Page, step: ActionStep, tool: WebMCPToolDefinition,
   switch (step.type) {
     case 'navigate':
       if (!step.url) throw new Error('Navigation step is missing a URL.');
-      await page.goto(step.url, { waitUntil: 'domcontentloaded', timeout: 25000 });
+      await page.goto(withEnglishUrlParams(step.url), { waitUntil: 'domcontentloaded', timeout: 25000 });
       return null;
     case 'fill':
     case 'type': {
@@ -156,6 +224,7 @@ export async function executeRecipe(env: Env, tool: WebMCPToolDefinition, parame
   try {
     const page = await browser.newPage();
     await page.setViewport({ width: 1280, height: 800 });
+    await configureEnglishLocale(page);
     let result: unknown = null;
     let screenshotBase64: string | undefined;
     for (const step of tool.actionRecipe) {
@@ -182,7 +251,8 @@ export async function analyzePage(env: Env, url: string): Promise<Record<string,
   try {
     const page = await browser.newPage();
     await page.setViewport({ width: 1280, height: 800 });
-    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 25000 });
+    await configureEnglishLocale(page);
+    await page.goto(withEnglishUrlParams(url), { waitUntil: 'domcontentloaded', timeout: 25000 });
     const data = await page.evaluate(() => ({
       url: location.href,
       title: document.title,
