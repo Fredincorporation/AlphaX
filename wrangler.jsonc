@@ -11,7 +11,7 @@
         "enabled": true
     },
     "vars": {
-        "ALLOWED_ORIGIN": "https://alphax-chi.vercel.app/"
+        "ALLOWED_ORIGIN": "https://alphax-chi.vercel.app"
     },
     "browser": {
         "binding": "BROWSER"
