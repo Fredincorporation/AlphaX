@@ -312,28 +312,53 @@ async function runStep(page: Page, step: ActionStep, tool: WebMCPToolDefinition,
 const LAUNCH_ATTEMPTS = 3;
 const LAUNCH_BACKOFF_MS = [2000, 6000, 12000];
 
+export class BrowserRateLimitError extends Error {
+  constructor() {
+    super(
+      'Browser Rendering rate limit exceeded (HTTP 429). Cloudflare allows a limited number of concurrent browser sessions (2 on the free plan) and a daily request quota. Retried multiple times with backoff — please wait a moment and try again, or reduce the frequency of tool executions.',
+    );
+    this.name = 'BrowserRateLimitError';
+  }
+}
+
+/**
+ * Serialize browser launches within one isolate. The free plan only allows
+ * 2 concurrent sessions; without this lock, concurrent requests (analyze
+ * screenshot + tool execution) each launch their own browser and race each
+ * other straight into HTTP 429.
+ */
+let launchChain: Promise<unknown> = Promise.resolve();
+
 /**
  * Launch a browser with retry/backoff. Cloudflare Browser Rendering returns
  * 429 "Rate limit exceeded" when concurrent or daily quotas are hit; retrying
  * after a delay usually succeeds once other sessions have been released.
  */
 export async function launchBrowser(env: Env): Promise<Browser> {
-  let lastError: unknown;
-  for (let attempt = 0; attempt < LAUNCH_ATTEMPTS; attempt++) {
-    if (attempt > 0) {
-      await new Promise((resolve) => setTimeout(resolve, LAUNCH_BACKOFF_MS[Math.min(attempt - 1, LAUNCH_BACKOFF_MS.length - 1)]));
+  // Chain this launch behind any launch already in progress in this isolate.
+  const previous = launchChain;
+  let release!: (value: unknown) => void;
+  launchChain = new Promise((resolve) => (release = resolve));
+  await previous;
+  try {
+    let lastError: unknown;
+    for (let attempt = 0; attempt < LAUNCH_ATTEMPTS; attempt++) {
+      if (attempt > 0) {
+        await new Promise((resolve) => setTimeout(resolve, LAUNCH_BACKOFF_MS[Math.min(attempt - 1, LAUNCH_BACKOFF_MS.length - 1)]));
+      }
+      try {
+        return await puppeteer.launch(env.BROWSER);
+      } catch (error) {
+        lastError = error;
+        const message = error instanceof Error ? error.message : String(error);
+        if (!/429|rate limit/i.test(message)) throw error;
+      }
     }
-    try {
-      return await puppeteer.launch(env.BROWSER);
-    } catch (error) {
-      lastError = error;
-      const message = error instanceof Error ? error.message : String(error);
-      if (!/429|rate limit/i.test(message)) throw error;
-    }
+    void lastError;
+    throw new BrowserRateLimitError();
+  } finally {
+    release(undefined);
   }
-  throw new Error(
-    'Browser Rendering rate limit exceeded (HTTP 429). Cloudflare allows a limited number of concurrent browser sessions (2 on the free plan) and a daily request quota. Retried multiple times with backoff — please wait a moment and try again, or reduce the frequency of tool executions.',
-  );
 }
 
 export async function executeRecipe(env: Env, tool: WebMCPToolDefinition, parameters: Record<string, unknown>, onStep?: (message: string) => Promise<void>): Promise<{ result: unknown; screenshotBase64?: string }> {

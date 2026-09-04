@@ -1,6 +1,6 @@
 import type { ActionStep, PageAnalysisResult, ToolExecutionRequest, ToolExecutionResponse, WebMCPToolDefinition } from '../shared/types';
 import { LLMToolGenerator } from '../server/llmToolGenerator';
-import { analyzePage as renderPage, executeRecipe, launchBrowser, toBase64 } from './browser';
+import { analyzePage as renderPage, BrowserRateLimitError, executeRecipe, launchBrowser, toBase64 } from './browser';
 import { deleteToolsForDomain, getAllTools, getHistory, getToolsByDomain, saveExecution, saveTools } from './db';
 import type { Env } from './env';
 import { SessionCoordinator } from './sessionCoordinator';
@@ -268,6 +268,11 @@ export default {
 
       return response({ error: 'Not found' }, request, env, 404);
     } catch (error) {
+      // Surface quota exhaustion as 429 so clients can offer "retry later"
+      // instead of treating it as a server fault (500).
+      if (error instanceof BrowserRateLimitError) {
+        return response({ error: error.message }, request, env, 429);
+      }
       return response({ error: error instanceof Error ? error.message : 'Worker request failed' }, request, env, 500);
     }
   },
