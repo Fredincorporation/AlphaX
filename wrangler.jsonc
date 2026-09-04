@@ -16,6 +16,12 @@
     "browser": {
         "binding": "BROWSER"
     },
+    "kv_namespaces": [
+        {
+            "binding": "CACHE",
+            "id": "654d2845863446bd9804427b9f01f109"
+        }
+    ],
     "assets": {
         "directory": "./dist"
     },

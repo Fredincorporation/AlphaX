@@ -5,3 +5,7 @@
 wrangler-dev.log
 diag-*.json
 .dev.vars
+
+*.log
+wtail*.txt
+*.bak

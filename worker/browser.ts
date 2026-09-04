@@ -80,6 +80,7 @@ function toBase64(bytes: Uint8Array): string {
   }
   return btoa(binary);
 }
+export { toBase64 };
 
 async function visibleTarget(page: Page, selector: string, editable = false, timeoutMs = ACTION_TIMEOUT): Promise<ElementHandle<Element>> {
   const deadline = Date.now() + timeoutMs;
@@ -316,7 +317,7 @@ const LAUNCH_BACKOFF_MS = [2000, 6000, 12000];
  * 429 "Rate limit exceeded" when concurrent or daily quotas are hit; retrying
  * after a delay usually succeeds once other sessions have been released.
  */
-async function launchBrowser(env: Env): Promise<Browser> {
+export async function launchBrowser(env: Env): Promise<Browser> {
   let lastError: unknown;
   for (let attempt = 0; attempt < LAUNCH_ATTEMPTS; attempt++) {
     if (attempt > 0) {
