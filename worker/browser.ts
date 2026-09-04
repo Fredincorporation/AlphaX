@@ -81,23 +81,32 @@ function toBase64(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
-async function visibleTarget(page: Page, selector: string, editable = false): Promise<ElementHandle<Element>> {
-  const deadline = Date.now() + ACTION_TIMEOUT;
+async function visibleTarget(page: Page, selector: string, editable = false, timeoutMs = ACTION_TIMEOUT): Promise<ElementHandle<Element>> {
+  const deadline = Date.now() + timeoutMs;
+  // Support comma-separated or array fallback candidates
+  const selectorCandidates = selector.split(',').map((s) => s.trim()).filter(Boolean);
+
   while (Date.now() < deadline) {
-    const candidates = await page.$$(selector);
-    for (const candidate of candidates) {
-      const usable = await candidate.evaluate((element, requireEditable) => {
-        const htmlElement = element as HTMLElement & { disabled?: boolean };
-        const style = window.getComputedStyle(htmlElement);
-        const rect = htmlElement.getBoundingClientRect();
-        const visible = rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden';
-        const isEditable = element instanceof HTMLTextAreaElement
-          || (element instanceof HTMLInputElement && !['button', 'hidden', 'image', 'reset', 'submit'].includes(element.type))
-          || element instanceof HTMLSelectElement;
-        return visible && (!requireEditable || isEditable) && !htmlElement.disabled;
-      }, editable);
-      if (usable) return candidate;
-      await candidate.dispose();
+    for (const candSelector of selectorCandidates) {
+      try {
+        const elements = await page.$$(candSelector);
+        for (const candidate of elements) {
+          const usable = await candidate.evaluate((element, requireEditable) => {
+            const htmlElement = element as HTMLElement & { disabled?: boolean };
+            const style = window.getComputedStyle(htmlElement);
+            const rect = htmlElement.getBoundingClientRect();
+            const visible = rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden';
+            const isEditable = element instanceof HTMLTextAreaElement
+              || (element instanceof HTMLInputElement && !['button', 'hidden', 'image', 'reset', 'submit'].includes(element.type))
+              || element instanceof HTMLSelectElement;
+            return visible && (!requireEditable || isEditable) && !htmlElement.disabled;
+          }, editable);
+          if (usable) return candidate;
+          await candidate.dispose();
+        }
+      } catch {
+        // Continue to next candidate selector
+      }
     }
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
@@ -111,6 +120,22 @@ function resolveSelector(selector: string, tool: WebMCPToolDefinition, stepType:
   if (isGoogleSearch && /(?:^|\[)name=['"]?btnK['"]?/i.test(selector)) {
     return 'textarea[name="q"], input[name="q"]';
   }
+
+  // Bing search results fallback
+  if (/#b_results\b/i.test(selector)) {
+    return '#b_results, #b_content, ol#b_results, .b_algo, main, [role="main"]';
+  }
+
+  // News card heading fallback
+  if (/\.news-card\s+h2/i.test(selector)) {
+    return '.news-card h2, article h2, [class*="card"] h2, [class*="story"] h2, [class*="news"] h2, main h2, h2';
+  }
+
+  // Generic news card fallback
+  if (/\.news-card\b/i.test(selector)) {
+    return '.news-card, article, [class*="card"], [class*="story"], [class*="news"], main li';
+  }
+
   return selector;
 }
 
@@ -131,7 +156,7 @@ async function runStep(page: Page, step: ActionStep, tool: WebMCPToolDefinition,
     case 'fill':
     case 'type': {
       if (!selector) throw new Error('Fill step is missing a selector.');
-      const target = await visibleTarget(page, selector, true);
+      const target = await visibleTarget(page, selector, true, step.timeoutMs || ACTION_TIMEOUT);
       await target.evaluate((element, text) => {
         const input = element as HTMLInputElement | HTMLTextAreaElement;
         input.focus();
@@ -145,7 +170,7 @@ async function runStep(page: Page, step: ActionStep, tool: WebMCPToolDefinition,
     case 'click': {
       if (!selector) throw new Error('Click step is missing a selector.');
       const action = async () => {
-        const target = await visibleTarget(page, selector);
+        const target = await visibleTarget(page, selector, false, step.timeoutMs || ACTION_TIMEOUT);
         await target.click();
         await target.dispose();
       };
@@ -156,7 +181,7 @@ async function runStep(page: Page, step: ActionStep, tool: WebMCPToolDefinition,
     case 'press': {
       const action = async () => {
         if (selector) {
-          const target = await visibleTarget(page, selector);
+          const target = await visibleTarget(page, selector, false, step.timeoutMs || ACTION_TIMEOUT);
           await target.press((step.key || value || 'Enter') as any);
           await target.dispose();
         } else {
@@ -169,7 +194,7 @@ async function runStep(page: Page, step: ActionStep, tool: WebMCPToolDefinition,
     }
     case 'select': {
       if (!selector) throw new Error('Select step is missing a selector.');
-      const target = await visibleTarget(page, selector);
+      const target = await visibleTarget(page, selector, false, step.timeoutMs || ACTION_TIMEOUT);
       await target.select(value);
       await target.dispose();
       return null;
@@ -177,7 +202,7 @@ async function runStep(page: Page, step: ActionStep, tool: WebMCPToolDefinition,
     case 'check':
     case 'uncheck': {
       if (!selector) throw new Error(`${step.type} step is missing a selector.`);
-      const target = await visibleTarget(page, selector);
+      const target = await visibleTarget(page, selector, false, step.timeoutMs || ACTION_TIMEOUT);
       await target.evaluate((element, type) => {
         const input = element as HTMLInputElement;
         if (input.checked !== (type === 'check')) input.click();
@@ -187,27 +212,91 @@ async function runStep(page: Page, step: ActionStep, tool: WebMCPToolDefinition,
     }
     case 'hover': {
       if (!selector) throw new Error('Hover step is missing a selector.');
-      const target = await visibleTarget(page, selector);
+      const target = await visibleTarget(page, selector, false, step.timeoutMs || ACTION_TIMEOUT);
       await target.hover();
       await target.dispose();
       return null;
     }
     case 'wait_for':
-      if (selector) await visibleTarget(page, selector);
-      else await new Promise((resolve) => setTimeout(resolve, step.timeoutMs || 1000));
+      if (selector) {
+        try {
+          const target = await visibleTarget(page, selector, false, step.timeoutMs || 4000);
+          await target.dispose();
+        } catch (waitErr) {
+          // If the step is explicitly optional, or if a general timeout occurs on a search container, gracefully continue
+          if (step.optional) {
+            return null;
+          }
+          // For search result containers like #b_results, if the page has already loaded results under main or body, continue
+          const hasContent = await page.evaluate(() => document.body && document.body.innerText.trim().length > 100);
+          if (!hasContent) {
+            throw waitErr;
+          }
+        }
+      } else {
+        await new Promise((resolve) => setTimeout(resolve, step.timeoutMs || 1000));
+      }
       return null;
     case 'scroll':
       await page.evaluate(() => window.scrollBy({ top: 500, behavior: 'smooth' }));
       return null;
     case 'extract_text': {
-      const text = await page.$eval(selector || 'body', (element) => (element as HTMLElement).innerText || element.textContent || '');
+      // Resilient text extraction: query selector with fallback to article, main, or body instead of throwing
+      const targetSelector = selector || 'body';
+      const text = await page.evaluate((sel) => {
+        // Try candidate selectors separated by comma or fallback to general content containers
+        const candidates = sel ? sel.split(',').map((s) => s.trim()).filter(Boolean) : [];
+        for (const candidate of candidates) {
+          try {
+            const el = document.querySelector(candidate);
+            if (el && (el as HTMLElement).innerText?.trim()) {
+              return (el as HTMLElement).innerText;
+            }
+          } catch {
+            // ignore invalid syntax
+          }
+        }
+        // Fallback to article, main, or body
+        const fallback = document.querySelector('article')
+          || document.querySelector('main')
+          || document.querySelector('[role="main"]')
+          || document.body;
+        return (fallback as HTMLElement)?.innerText || fallback?.textContent || '';
+      }, targetSelector);
+
       return { text: text.trim().slice(0, 5000), characterCount: text.length };
     }
     case 'extract_links': {
-      const links = await page.$$eval(selector || 'a', (elements) => elements.map((element) => ({
-        text: (element as HTMLElement).innerText.trim(),
-        href: (element as HTMLAnchorElement).href,
-      })).filter((link) => link.text && link.href).slice(0, 30));
+      const targetSelector = selector || 'a';
+      const links = await page.evaluate((sel) => {
+        const candidates = sel ? sel.split(',').map((s) => s.trim()).filter(Boolean) : ['a'];
+        let matchedElements: Element[] = [];
+        for (const candidate of candidates) {
+          try {
+            const els = Array.from(document.querySelectorAll(candidate));
+            if (els.length > 0) {
+              matchedElements = els;
+              break;
+            }
+          } catch {
+            // ignore
+          }
+        }
+        if (matchedElements.length === 0) {
+          matchedElements = Array.from(document.querySelectorAll('a'));
+        }
+        return matchedElements
+          .map((element) => {
+            const anchor = element.tagName.toLowerCase() === 'a' ? element as HTMLAnchorElement : element.querySelector('a');
+            return {
+              text: (element as HTMLElement).innerText?.trim() || anchor?.innerText?.trim() || '',
+              href: anchor?.href || '',
+            };
+          })
+          .filter((link) => link.text && link.href)
+          .slice(0, 30);
+      }, targetSelector);
+
       return { links, count: links.length };
     }
     case 'evaluate_js':

@@ -24,12 +24,13 @@ WEBMCP TOOL PRINCIPLES:
 1. HIGH-LEVEL & SEMANTIC: Name tools semantically like 'search_articles', 'submit_newsletter', 'filter_by_category', 'extract_pricing_tiers', 'add_to_cart', 'fetch_article_content'. DO NOT name them 'click_button_1'.
 2. JSON SCHEMA: Every tool must have a valid JSON Schema for inputSchema with accurate property types, descriptions, and required arrays.
 3. ACTION RECIPES: Each tool must provide an executable sequence of ActionSteps (navigate, click, fill, type, select, check, extract_text, extract_table, extract_links, wait_for, evaluate_js).
-4. SAFETY & HUMAN SUPERVISION ANNOTATIONS:
+4. SELECTOR ROBUSTNESS: Use resilient, cascading comma-separated selectors with semantic HTML tag fallbacks (e.g. '.news-card h2, article h2, main h2, h2' or '#b_results, #b_content, main, [role="main"]'). Never rely on single fragile classes.
+5. SAFETY & HUMAN SUPERVISION ANNOTATIONS:
    - readOnly: true for queries, search, data extraction
    - destructive: true for purchases, deletions, payment, checkout, account mutations
    - requiresConfirmation: true for any mutation, write operation, form submission, or external action
    - category: 'navigation' | 'data_extraction' | 'search' | 'form_submission' | 'interaction' | 'checkout' | 'account'
-5. PARAMETER MAPPING: ActionStep with dynamicParam maps directly to a parameter key in inputSchema.
+6. PARAMETER MAPPING: ActionStep with dynamicParam maps directly to a parameter key in inputSchema.
 
 OUTPUT FORMAT:
 Return a JSON object with a "tools" array containing WebMCPToolDefinition objects.`;
