@@ -50,30 +50,48 @@ Cloudflare supplies the browser runtime; this project does not download local Ch
 
 Create a `.env` file when you need server-side or frontend configuration. All provider keys are optional.
 
+For local development, create a `.env` file that points the frontend at the Worker, which `wrangler dev` serves on port 8787 by default:
+
+```dotenv
+# File: .env
+VITE_API_URL=http://localhost:8787
+VITE_WS_URL=ws://localhost:8787
+```
+
+> **Important:** Vite proxies same-origin `/api` and `/ws` requests to `http://localhost:3001`. If anything else is already listening on port 3001 (e.g. another project's dev server), it will silently intercept AlphaX traffic and features such as the Real-Time Action Log will show no results. Using `VITE_API_URL`/`VITE_WS_URL` against port 8787 avoids this conflict.
+
+For deployments, override the same variables with your backend URLs:
+
 ```env
-# Optional frontend API override
-VITE_API_URL=https://api.yourdomain.com
-VITE_WS_URL=wss://api.yourdomain.com
-
-# Worker secrets: npx wrangler secret put GROQ_API_KEY
-# Worker secrets: npx wrangler secret put GEMINI_API_KEY
-
 # Frontend-to-backend URLs for a separately deployed frontend
 VITE_API_URL=https://your-backend.example.com
 VITE_WS_URL=wss://your-backend.example.com
 ```
 
-When `VITE_API_URL` and `VITE_WS_URL` are unset, the frontend uses same-origin requests. Vite proxies `/api` and `/ws` to `http://localhost:3001` during local development.
+Worker secrets are optional and configured with Wrangler, not `.env`:
 
-Create the D1 database and apply migrations with `npx wrangler d1 migrations apply alphax --remote`.
+```bash
+npx wrangler secret put GROQ_API_KEY
+npx wrangler secret put GEMINI_API_KEY
+```
+
+Create the D1 database and apply migrations locally and remotely:
+
+```bash
+npx wrangler d1 migrations apply alphax --local
+npx wrangler d1 migrations apply alphax --remote
+```
 
 ## Run Locally
 
-Run the Cloudflare backend:
+Apply local D1 migrations, then run the Cloudflare backend (serves on `http://localhost:8787`):
 
 ```bash
+npx wrangler d1 migrations apply alphax --local
 npm run dev
 ```
+
+Make sure the `.env` from the Configuration section exists so the frontend connects to port 8787.
 
 Run the Vite frontend in a second terminal:
 
@@ -91,7 +109,7 @@ Useful local endpoints:
 - `GET /api/tools` - list stored tools
 - `POST /api/tools/execute` - execute a tool recipe
 - `GET /api/history` - execution history
-- `ws://localhost:3001/ws?sessionId=...` - live status and confirmation events
+- `ws://localhost:8787/ws?sessionId=...` - live status, execution log, and confirmation events
 
 ## Cloudflare Deployment
 
