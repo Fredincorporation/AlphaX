@@ -155,10 +155,25 @@ export default {
         const targetUrl = allowedUrl(body.url);
         const domain = new URL(targetUrl).hostname;
 
-        // --- #3 dedupe: collapse double-clicks / duplicate analyze calls ---
+        // --- #3 dedupe: collapse true double-clicks (in-flight requests only).
+        // Completed analyses never block retries — the cache serves those.
+        // If a duplicate arrives but the analysis is already cached, serve the
+        // cached result instead of erroring.
         const dedupeId = targetUrl;
         if (isDuplicate(env, 'analyze', dedupeId) && !body.forceRegenerate) {
-          return response({ error: 'Duplicate analyze request for this URL is already in progress or was just served. Retry in a few seconds.' }, request, env, 429);
+          const cachedWhileLocked = await getJson<{ analysis: PageAnalysisResult; tools: WebMCPToolDefinition[] }>(env, analysisKey(domain));
+          if (cachedWhileLocked) {
+            const cachedShot = await captureScreenshotCached(env, targetUrl, Boolean(body.forceLive));
+            return response({
+              success: true,
+              analysis: { ...cachedWhileLocked.analysis, screenshotBase64: cachedShot },
+              proposedTools: cachedWhileLocked.tools,
+              approvedTools: await getToolsByDomain(env, cachedWhileLocked.analysis.domain),
+              domain: cachedWhileLocked.analysis.domain,
+              analysisSource: 'cache',
+            }, request, env);
+          }
+          return response({ error: 'Duplicate analyze request for this URL is still in progress. Retry in a few seconds.' }, request, env, 429);
         }
 
         try {

@@ -14,9 +14,12 @@ import type { Env } from './env';
 
 export const ANALYSIS_TTL_SECONDS = 60 * 60 * 24; // 24h
 export const SCREENSHOT_TTL_SECONDS = 240; // 4 min — "near-live" visual
-export const DEDUPE_TTL_SECONDS = 45;
 
-const DEDUPE_LOCK_STALE_MS = 60_000; // in-flight lock considered dead after this
+// In-flight lock only: a request is a duplicate while it is still running (plus
+// a small grace period), NOT for a window after it completes. Re-analyzing a
+// URL seconds after a successful analyze must be allowed — that's what the
+// analysis cache serves, not the dedupe gate.
+const DEDUPE_LOCK_STALE_MS = 15_000; // in-flight lock considered dead after this
 
 export function hasCache(env: Env): boolean {
   return Boolean((env as { CACHE?: unknown }).CACHE);
@@ -48,10 +51,11 @@ export const screenshotKey = (url: string) => `shot:v1:${url}`;
 export const dedupeKey = (kind: string, identity: string) => `dedupe:${kind}:${identity}`;
 
 /**
- * In-flight + recent-request dedupe. Returns true if an identical request was
- * already accepted within DEDUPE_TTL_SECONDS (caller should reject with 429 or
- * return the in-flight result). Uses KV as a short-lived lock; the in-process
- * Map guards the same isolate for zero-latency hits.
+ * In-flight dedupe. Returns true only while an identical request is still
+ * executing (or its lock is within the small stale grace window). A completed
+ * request does NOT block later identical requests — cache layers handle those.
+ * The in-process Map is per-isolate; Workers request coalescing plus short
+ * execution times make cross-isolate locking unnecessary here.
  */
 const inFlight = new Map<string, number>();
 
@@ -63,8 +67,6 @@ export function isDuplicate(env: Env, kind: string, identity: string): boolean {
     inFlight.delete(key); // stale lock — treat as finished
   }
   inFlight.set(key, Date.now());
-  // Fire-and-forget KV marker so other isolates also see the recent request.
-  void putJson(env, key, { at: Date.now() }, DEDUPE_TTL_SECONDS);
   return false;
 }
 
