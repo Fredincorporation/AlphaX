@@ -40,6 +40,17 @@ class WebMCPBridge {
   constructor() {
     this.detectNativeSupport();
     this.setupPolyfill();
+    this.exposeDebugProbe();
+  }
+
+  /** Test hook: lets scripts/webmcp-flag-test.mjs inspect bridge state. */
+  private exposeDebugProbe() {
+    if (typeof window === 'undefined') return;
+    (window as any).__alphaxWebMCPProbe = () => ({
+      isNativeWebMCPAvailable: this.isNativeWebMCPAvailable,
+      registeredTools: this.getRegisteredTools().map((t) => t.name),
+    });
+    (window as any).__alphaxNativeDetected = this.isNativeWebMCPAvailable;
   }
 
   private detectNativeSupport() {

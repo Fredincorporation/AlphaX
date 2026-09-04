@@ -52,9 +52,10 @@ for (const extra of flagVariants) {
     out.nativeWindow = typeof window.modelContext;
     out.nativeRegisterTool = typeof navigator.modelContext?.registerTool;
     out.nativeGetTools = typeof document.modelContext?.getTools;
-    // Try native registration exactly like Chrome's docs show
+    // Chrome's WebMCP runtime lives on navigator.modelContext
+    const mc = navigator.modelContext ?? window.modelContext ?? document.modelContext;
     try {
-      await document.modelContext.registerTool({
+      await mc.registerTool({
         name: 'alphax_probe_tool',
         description: 'probe',
         inputSchema: { type: 'object', properties: { q: { type: 'string' } } },
@@ -65,7 +66,7 @@ for (const extra of flagVariants) {
       out.probeRegister = `error: ${String(e).slice(0, 200)}`;
     }
     try {
-      const tools = await document.modelContext.getTools();
+      const tools = await (mc.getTools ? mc.getTools() : navigator.modelContext.getRegisteredTools?.() ?? []);
       out.probeGetTools = (tools || []).map((t) => t.name);
     } catch (e) {
       out.probeGetTools = `error: ${String(e).slice(0, 200)}`;
