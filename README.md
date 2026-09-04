@@ -1,33 +1,44 @@
 # AlphaX
 
-AlphaX is a human-supervised WebMCP mediation layer. It uses Cloudflare Browser Rendering to inspect websites, propose structured tools, and execute approved actions.
+AlphaX is a human-supervised WebMCP mediation layer. It inspects websites, proposes structured tools, and executes approved actions — powered entirely by Cloudflare Workers.
 
 ## What It Does
 
-1. Navigate to a target URL in a headless Chromium session.
+1. Analyze a target URL — via zero-quota static fetch first, falling back to Cloudflare Browser Rendering for JS-heavy pages.
 2. Inspect the page DOM, forms, links, headings, and interactive controls.
-3. Generate WebMCP tool proposals with JSON Schema inputs.
+3. Generate WebMCP tool proposals with JSON Schema inputs (Groq, Gemini, or the built-in heuristic generator).
 4. Review, edit, approve, or reject proposed tools.
-5. Register approved tools through `document.modelContext`, `window.modelContext`, and `navigator.modelContext`.
-6. Execute recipes through Playwright with human supervision and execution logging.
-7. Store tools and execution history in Cloudflare D1.
-
-The application includes a zero-key heuristic tool generator. GroqCloud and Gemini are optional enhancements.
+5. Execute approved tool recipes through Browser Rendering with human supervision and execution logging.
+6. Store tools and execution history in Cloudflare D1; cache analyses and screenshots in Workers KV.
+7. Register approved tools through `document.modelContext`, `window.modelContext`, and `navigator.modelContext`.
 
 ## Architecture
 
 ```text
-Browser UI
+Browser UI (Vercel)
   | REST and WebSocket
   v
 Cloudflare Worker
-  |-- Browser Rendering -> target website
+  |-- Static analyzer (fetch + HTMLRewriter, zero browser quota)
+  |-- Browser Rendering -> target website (JS-heavy pages, live screenshots)
+  |-- KV cache -> analyses (24h), screenshots (4min), request dedupe
   |-- Durable Objects -> sessions, WebSockets, confirmations
   |-- LLMToolGenerator -> GroqCloud, Gemini, or heuristics
   |-- D1 -> tools and audit history
   v
 WebMCP Bridge -> document.modelContext / window.modelContext / navigator.modelContext
 ```
+
+### Quota-saving pipeline
+
+Cloudflare's free Browser Rendering tier has strict daily and concurrency limits, so every browser launch is preceded by cheaper layers:
+
+1. **Request dedupe** — identical analyze/execute calls within ~45s get a `429` instead of a new browser session.
+2. **Analysis cache** (KV, 24h TTL) — repeat visits to the same domain skip both the render and the LLM generation pass.
+3. **Static analysis** — server-rendered sites are parsed with `fetch()` + HTMLRewriter at zero browser quota; only JS-rendered shells or bot-challenged pages fall through to Browser Rendering.
+4. **Screenshot cache** (KV, 4 min TTL) — the visual output stays near-real-time without re-rendering. Pass `"forceLive": true` to `/api/analyze` for a guaranteed fresh screenshot, or `"forceRegenerate": true` to bypass the analysis cache.
+
+The analyze response reports which path fired via `analysisSource`: `cache`, `static`, or `browser`.
 
 ## Requirements
 
@@ -118,7 +129,13 @@ npm run typecheck
 npm test
 npm run build:worker
 npx wrangler d1 migrations apply alphax --remote
-npm run deploy
+npm run deploy:worker
+```
+
+One-time setup: create the KV namespace used by the cache layer and paste its `id` into `wrangler.jsonc`:
+
+```bash
+npx wrangler kv namespace create CACHE
 ```
 
 Set `database_id` in `wrangler.jsonc`, configure `ALLOWED_ORIGIN` to the Vercel origin, and set Vercel's `VITE_API_URL` and `VITE_WS_URL` to the Worker hostname.
@@ -129,7 +146,7 @@ Set `database_id` in `wrangler.jsonc`, configure `ALLOWED_ORIGIN` to the Vercel 
 - **Supervised**: read-only tools run automatically; writes and sensitive actions require approval.
 - **Autonomous**: actions run without an approval prompt, but remain logged.
 
-Tool execution is serialized because all actions in a session share one Playwright page. This prevents simultaneous calls from navigating or modifying the page at the same time.
+Tool execution is serialized within a session so simultaneous calls cannot navigate or modify the page at the same time.
 
 ## Target-Site Limitations
 
@@ -158,8 +175,8 @@ Any other reachable URL can be analyzed, subject to the target site's policies a
 | `npm run build` | Typecheck and build the frontend |
 | `npm run typecheck` | Run TypeScript without emitting files |
 | `npm test` | Run the test suite |
-| `npm run build:worker` | Validate the Worker deployment |
-| `npm run deploy` | Deploy the Worker |
+| `npm run build:worker` | Validate the Worker deployment (dry run) |
+| `npm run deploy:worker` | Deploy the Worker to Cloudflare |
 
 ## License
 
