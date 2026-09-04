@@ -1,5 +1,22 @@
 import { PageAnalysisResult, WebMCPToolDefinition, ActionStep } from '../shared/types.js';
 
+/**
+ * Model IDs rotate frequently on both providers (free-tier lineups especially).
+ * generateWith* tries these in order and uses the first the API accepts, so a
+ * single retirement doesn't silently degrade the app to heuristic tools.
+ */
+const GROQ_MODELS = [
+  'openai/gpt-oss-120b',
+  'llama-3.3-70b-versatile',
+  'openai/gpt-oss-20b',
+  'llama-3.1-8b-instant',
+];
+const GEMINI_MODELS = [
+  'gemini-2.5-flash',
+  'gemini-2.0-flash',
+  'gemini-1.5-flash',
+];
+
 const SYSTEM_PROMPT = `You are an elite WebMCP (Web Model Context Protocol) architect and web automation engineer for AlphaX.
 Your mission is to analyze a target website's live DOM structure, interactive forms, navigation links, and content, then synthesize 6 to 12 high-level, human-supervised WebMCP tool definitions.
 
@@ -16,6 +33,17 @@ WEBMCP TOOL PRINCIPLES:
 
 OUTPUT FORMAT:
 Return a JSON object with a "tools" array containing WebMCPToolDefinition objects.`;
+
+/**
+ * Raised when a specific model ID is unavailable (retired / no access).
+ * The generator loop treats this as "try the next model" rather than a fatal failure.
+ */
+class ModelNotFoundError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ModelNotFoundError';
+  }
+}
 
 export function findSearchInput(elements: PageAnalysisResult['interactiveElements']) {
   return elements
@@ -67,28 +95,30 @@ export class LLMToolGenerator {
   async generateTools(analysis: PageAnalysisResult): Promise<WebMCPToolDefinition[]> {
     // 1. Try Primary: GroqCloud
     if (this.groqApiKey) {
-      try {
-        console.log('⚡ [AlphaX LLM] Synthesizing WebMCP tools via GroqCloud (llama-3.3-70b-versatile)...');
-        const tools = await this.generateWithGroq(analysis, this.groqApiKey);
-        if (tools && tools.length > 0) {
-          return tools;
+      const errors: string[] = [];
+      for (const model of GROQ_MODELS) {
+        try {
+          const tools = await this.generateWithGroq(analysis, this.groqApiKey, model);
+          if (tools && tools.length > 0) return tools;
+        } catch (err) {
+          errors.push(`${model}: ${err instanceof Error ? err.message : String(err)}`);
         }
-      } catch (err) {
-        console.warn('⚠️ [AlphaX LLM] GroqCloud synthesis attempt failed, falling back to Gemini/Heuristics:', err);
       }
+      if (errors.length) console.warn(`[AlphaX LLM] All Groq models failed: ${errors.join(' | ')}`);
     }
 
     // 2. Try Fallback: Google Gemini
     if (this.geminiApiKey) {
-      try {
-        console.log('⚡ [AlphaX LLM] Synthesizing WebMCP tools via Google Gemini (gemini-1.5-flash)...');
-        const tools = await this.generateWithGemini(analysis, this.geminiApiKey);
-        if (tools && tools.length > 0) {
-          return tools;
+      const errors: string[] = [];
+      for (const model of GEMINI_MODELS) {
+        try {
+          const tools = await this.generateWithGemini(analysis, this.geminiApiKey, model);
+          if (tools && tools.length > 0) return tools;
+        } catch (err) {
+          errors.push(`${model}: ${err instanceof Error ? err.message : String(err)}`);
         }
-      } catch (err) {
-        console.warn('⚠️ [AlphaX LLM] Google Gemini synthesis attempt failed, falling back to Heuristics:', err);
       }
+      if (errors.length) console.warn(`[AlphaX LLM] All Gemini models failed: ${errors.join(' | ')}`);
     }
 
     // 3. Fallback: Always-on AST / Heuristic Synthesizer
@@ -96,7 +126,7 @@ export class LLMToolGenerator {
     return this.generateHeuristicTools(analysis);
   }
 
-  private async generateWithGroq(analysis: PageAnalysisResult, apiKey: string): Promise<WebMCPToolDefinition[]> {
+  private async generateWithGroq(analysis: PageAnalysisResult, apiKey: string, model: string): Promise<WebMCPToolDefinition[]> {
     const userPrompt = `Analyze this live web page and synthesize high-level WebMCP tools:
 URL: ${analysis.url}
 Title: ${analysis.title}
@@ -147,7 +177,7 @@ Respond strictly in JSON format with a "tools" key containing an array of tool o
         Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: 'llama-3.3-70b-versatile',
+        model,
         messages: [
           { role: 'system', content: SYSTEM_PROMPT },
           { role: 'user', content: userPrompt },
@@ -160,7 +190,13 @@ Respond strictly in JSON format with a "tools" key containing an array of tool o
 
     if (!res.ok) {
       const errBody = await res.text();
-      throw new Error(`GroqCloud API error HTTP ${res.status}: ${errBody}`);
+      // 404/400 model_not_found → try next model in the chain; 429/5xx → abort chain (retrying won't help mid-request).
+      const permanent = res.status === 404 || /model_not_found|does not exist/i.test(errBody);
+      const err = new Error(`Groq API error HTTP ${res.status} (${model}): ${errBody.slice(0, 300)}`);
+      (err as any).permanent = permanent;
+      if (!permanent) throw err;
+      // For model-level failures, skip straight to heuristic-quality by signaling caller to continue the loop.
+      throw new ModelNotFoundError(err.message);
     }
 
     const data = await res.json() as any;
@@ -171,7 +207,7 @@ Respond strictly in JSON format with a "tools" key containing an array of tool o
     return this.normalizeToolsList(rawList, analysis);
   }
 
-  private async generateWithGemini(analysis: PageAnalysisResult, apiKey: string): Promise<WebMCPToolDefinition[]> {
+  private async generateWithGemini(analysis: PageAnalysisResult, apiKey: string, model: string): Promise<WebMCPToolDefinition[]> {
     const prompt = `${SYSTEM_PROMPT}
 
 Analyze this page and output WebMCP tools in valid JSON format:
@@ -186,7 +222,7 @@ Content: ${analysis.rawTextSnippet.slice(0, 1500)}
 
 Respond only with JSON: {"tools": [...]}`;
 
-    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
     const res = await fetch(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -201,7 +237,13 @@ Respond only with JSON: {"tools": [...]}`;
 
     if (!res.ok) {
       const errBody = await res.text();
-      throw new Error(`Gemini API error HTTP ${res.status}: ${errBody}`);
+      const permanent = res.status === 404 || /NOT_FOUND|not found|not supported/i.test(errBody);
+      const err = new ModelNotFoundError(`Gemini API error HTTP ${res.status} (${model}): ${errBody.slice(0, 300)}`);
+      if (!permanent) {
+        (err as any).permanent = false;
+        throw err;
+      }
+      throw err;
     }
 
     const data = await res.json() as any;

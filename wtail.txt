@@ -1,0 +1,35 @@
+
+ ⛅️ wrangler 4.129.0
+────────────────────
+Successfully created tail, expires at 2026-09-04T22:23:22Z
+Connected to alphax-api, waiting for logs...
+POST https://alphax-api.fredincorporation.workers.dev/api/analyze - Ok @ 9/4/2026, 5:26:05 PM
+  (log) ⚡ [AlphaX LLM] Synthesizing WebMCP tools via GroqCloud (llama-3.3-70b-versatile)...
+  (warn) ⚠️ [AlphaX LLM] GroqCloud synthesis attempt failed, falling back to Gemini/Heuristics: Error: GroqCloud API error HTTP 404: {"error":{"message":"The model `llama-3.3-70b-versatile` does not exist or you do not have access to it.","type":"invalid_request_error","code":"model_not_found"}}
+
+  (log) ⚡ [AlphaX LLM] Synthesizing WebMCP tools via Google Gemini (gemini-1.5-flash)...
+  (warn) ⚠️ [AlphaX LLM] Google Gemini synthesis attempt failed, falling back to Heuristics: Error: Gemini API error HTTP 404: {
+  "error": {
+    "code": 404,
+    "message": "models/gemini-1.5-flash is not found for API version v1beta, or is not supported for generateContent. Call ModelService.ListModels to see the list of available models and their supported methods.",
+    "status": "NOT_FOUND"
+  }
+}
+
+  (log) 🛡️ [AlphaX Synthesizer] Generating high-precision AST/heuristic WebMCP tools...
+GET https://alphax-api.fredincorporation.workers.dev/ws?sessionId=session_mlnhb3f - Exception Thrown @ 9/4/2026, 5:26:02 PM
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mError: This script has been upgraded. Please send a new request to connect to the new version.[0m
+
+
+GET https://alphax-api.fredincorporation.workers.dev/ws?sessionId=session_mlnhb3f - Unknown @ 9/4/2026, 5:26:02 PM
+GET https://alphax-api.fredincorporation.workers.dev/ws?sessionId=session_mlnhb3f - Exception Thrown @ 9/4/2026, 5:32:34 PM
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mError: This script has been upgraded. Please send a new request to connect to the new version.[0m
+
+
+GET https://alphax-api.fredincorporation.workers.dev/ws?sessionId=session_mlnhb3f - Unknown @ 9/4/2026, 5:32:34 PM
+GET https://alphax-api.fredincorporation.workers.dev/ws?sessionId=session_mlnhb3f - Exception Thrown @ 9/4/2026, 5:32:37 PM
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mError: This script has been upgraded. Please send a new request to connect to the new version.[0m
+
+
+GET https://alphax-api.fredincorporation.workers.dev/ws?sessionId=session_mlnhb3f - Unknown @ 9/4/2026, 5:32:37 PM
+POST https://alphax-api.fredincorporation.workers.dev/api/analyze - Ok @ 9/4/2026, 5:33:02 PM
