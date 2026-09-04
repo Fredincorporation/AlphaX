@@ -504,7 +504,7 @@ export const useMediatorStore = create<MediatorState>((set, get) => {
         proposedTools: state.proposedTools.filter(t => t.id !== toolId),
         approvedTools: state.approvedTools.filter(t => t.id !== toolId),
       }));
-      webmcpBridge.unregisterTool(toolId);
+      webmcpBridge.unregisterTool(tool?.name || toolId);
       get().addToast({
         type: 'info',
         title: 'Tool Discarded',

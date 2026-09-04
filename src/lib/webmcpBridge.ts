@@ -45,7 +45,7 @@ class WebMCPBridge {
   private detectNativeSupport() {
     if (
       typeof window !== 'undefined' &&
-      (window.modelContext || (document && document.modelContext) || (navigator && (navigator as any).modelContext))
+      ((navigator as any).modelContext || window.modelContext || (document && document.modelContext))
     ) {
       this.isNativeWebMCPAvailable = true;
       console.log('⚡ [AlphaX WebMCP Bridge] Native WebMCP detected in browser context!');
@@ -55,8 +55,29 @@ class WebMCPBridge {
     }
   }
 
+  /**
+   * Resolve the modelContext that should receive registrations.
+   * When Chrome runs with WebMCP enabled (--enable-features=WebMCPTesting /
+   * chrome://flags/#enable-webmcp-testing), the REAL runtime lives on
+   * navigator.modelContext. document/window are only ever the polyfill, so the
+   * native context must always win — otherwise tools are silently swallowed by
+   * the polyfill and the agent sees an empty tool list.
+   */
+  private getNativeContext(): any {
+    const nav = (navigator as any).modelContext;
+    if (nav && typeof nav.registerTool === 'function') return nav;
+    if (document.modelContext && typeof document.modelContext.registerTool === 'function') return document.modelContext;
+    const win = (window as any).modelContext;
+    if (win && typeof win.registerTool === 'function') return win;
+    return null;
+  }
+
   private setupPolyfill() {
     if (typeof window === 'undefined') return;
+    // Never shadow a native runtime: with the WebMCP flag enabled the browser
+    // provides navigator.modelContext and installs our polyfill would hijack
+    // document.modelContext lookups (see getNativeContext).
+    if (this.isNativeWebMCPAvailable) return;
 
     const bridge = this;
     const contextObj = {
@@ -115,11 +136,11 @@ class WebMCPBridge {
     this.registeredTools.set(tool.name, tool);
     this.executors.set(tool.name, executor);
 
-    // Call document.modelContext if available
-    const nativeObj = document.modelContext || (window as any).modelContext || (navigator as any).modelContext;
+    // Prefer the native runtime (navigator.modelContext when WebMCP flag is on)
+    const nativeObj = this.getNativeContext();
     if (nativeObj && typeof nativeObj.registerTool === 'function') {
       try {
-        nativeObj.registerTool({
+        const registered = nativeObj.registerTool({
           name: tool.name,
           description: tool.description,
           inputSchema: tool.inputSchema,
@@ -128,6 +149,12 @@ class WebMCPBridge {
             return await executor(params);
           },
         });
+        // Native registerTool is async — surface async validation failures.
+        if (registered && typeof registered.then === 'function') {
+          registered.catch((err: unknown) => {
+            console.warn(`Error registering tool ${tool.name} with native modelContext:`, err);
+          });
+        }
       } catch (err) {
         console.warn(`Error registering tool ${tool.name} with native modelContext:`, err);
       }
@@ -148,7 +175,7 @@ class WebMCPBridge {
   public unregisterTool(toolName: string) {
     this.registeredTools.delete(toolName);
     this.executors.delete(toolName);
-    const nativeObj = document.modelContext || (window as any).modelContext || (navigator as any).modelContext;
+    const nativeObj = this.getNativeContext();
     if (nativeObj && typeof nativeObj.unregisterTool === 'function') {
       try {
         nativeObj.unregisterTool(toolName);
