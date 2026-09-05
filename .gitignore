@@ -9,3 +9,13 @@ diag-*.json
 *.log
 wtail*.txt
 *.bak
+
+# Build output
+dist/
+
+# Local databases
+data/*.db
+data/*.db-journal
+
+# Temp / scratch files
+_gh_check.json

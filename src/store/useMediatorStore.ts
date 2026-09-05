@@ -203,6 +203,18 @@ function setupWebSocket(sessionId: string, get: () => MediatorState, set: (fn: P
             title: 'Confirmation Gate Triggered',
             message: `Supervision required for "${data.confirmation?.toolName || 'action'}"`,
           });
+        } else if (data.type === 'confirmation_expired') {
+          // Server-side gate timed out (fail-closed). Dismiss the modal if it is
+          // still showing this exact prompt so we never resolve a stale one.
+          const current = get().pendingConfirmation;
+          if (current && current.id === data.confirmationId) {
+            set({ pendingConfirmation: null });
+            get().addToast({
+              type: 'warn',
+              title: 'Confirmation Expired',
+              message: 'No verdict was received within the timeout window. The request was rejected fail-closed.',
+            });
+          }
         }
       } catch (e) {
         // Silently handle transient parse edge cases

@@ -4,6 +4,7 @@ import { analyzePage as renderPage, BrowserRateLimitError, executeRecipe, launch
 import { deleteToolsForDomain, getAllTools, getHistory, getToolsByDomain, saveExecution, saveTools } from './db';
 import type { Env } from './env';
 import { SessionCoordinator } from './sessionCoordinator';
+import { McpEndpoint } from './mcp';
 import { PREBUILT_RECIPES, SAMPLE_TARGETS } from '../server/prebuiltRecipes';
 import { analyzeStatic } from './staticAnalyzer';
 import {
@@ -120,9 +121,15 @@ async function executeTool(request: Request, env: Env, sessionId: string, tool: 
   if (tool.annotations.requiresConfirmation && toolRequest.origin !== 'human-tester') {
     const confirmationId = `conf_${crypto.randomUUID()}`;
     const confirmation = { id: confirmationId, toolExecutionId: executionId, toolName: tool.name, parameters: toolRequest.parameters, riskLevel: tool.annotations.destructive ? 'high' : 'medium', status: 'pending', timestamp: new Date().toISOString(), timeoutSeconds: 60 };
-    const confirmationResponse = await sessionStub(request, env, sessionId).fetch('https://session/confirm', { method: 'POST', body: JSON.stringify({ id: confirmationId, confirmation }) });
-    if (!(await confirmationResponse.json() as { approved: boolean }).approved) {
-      return { id: `res_${crypto.randomUUID()}`, requestId: toolRequest.id, toolName: tool.name, status: 'rejected', error: 'Execution cancelled: human confirmation was not approved.', executionTimeMs: Date.now() - started, logs: [], provenance: { targetUrl: tool.annotations.sourceUrl || '', executedStepsCount: 0, confirmedByHuman: false, timestamp: new Date().toISOString(), toolVersion: 'cloudflare-1.0.0' } };
+    // Gate relocated into the DO (Phase 1): the verdict is approved/rejected/
+    // timeout, and the timeout fails closed inside the coordinator.
+    const approvalResponse = await sessionStub(request, env, sessionId).fetch('https://session/request-approval', { method: 'POST', body: JSON.stringify({ id: confirmationId, confirmation }) });
+    const { verdict } = await approvalResponse.json() as { verdict: 'approved' | 'rejected' | 'timeout' };
+    if (verdict !== 'approved') {
+      const reason = verdict === 'timeout'
+        ? 'Execution rejected: no human verdict within the 60s confirmation window (fail-closed).'
+        : 'Execution cancelled: human confirmation was not approved.';
+      return { id: `res_${crypto.randomUUID()}`, requestId: toolRequest.id, toolName: tool.name, status: 'rejected', error: reason, executionTimeMs: Date.now() - started, logs: [], provenance: { targetUrl: tool.annotations.sourceUrl || '', executedStepsCount: 0, confirmedByHuman: false, timestamp: new Date().toISOString(), toolVersion: 'cloudflare-1.0.0' } };
     }
   }
 
@@ -146,6 +153,11 @@ export default {
 
     try {
       await ensureSeeded(env);
+      if (url.pathname === '/mcp' && request.method === 'POST') {
+        // MCP JSON-RPC 2.0 front door (Streamable-HTTP-style single POSTs).
+        return new McpEndpoint(env).handle(request);
+      }
+
       if (url.pathname === '/api/health') return response({ ok: true, runtime: 'cloudflare-workers', uptimeSeconds: 0 }, request, env);
       if (url.pathname === '/api/samples') return response({ samples: SAMPLE_TARGETS }, request, env);
 

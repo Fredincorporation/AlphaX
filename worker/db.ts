@@ -55,6 +55,12 @@ export async function getAllTools(env: Env): Promise<WebMCPToolDefinition[]> {
   return result.results.map(rowToTool);
 }
 
+export async function getToolById(env: Env, name: string): Promise<WebMCPToolDefinition | undefined> {
+  const result = await env.DB.prepare('SELECT * FROM saved_tools WHERE name = ? LIMIT 1')
+    .bind(name).first<Record<string, unknown>>();
+  return result ? rowToTool(result) : undefined;
+}
+
 export async function saveTools(env: Env, tools: WebMCPToolDefinition[]): Promise<void> {
   const now = new Date().toISOString();
   const statements: D1PreparedStatement[] = [];
