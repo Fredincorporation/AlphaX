@@ -9,6 +9,7 @@ import { getAllTools, getHistory, getToolById, saveExecution } from './db';
 import type { Env } from './env';
 import { BrowserRateLimitError, executeRecipe } from './browser';
 import { verifyAnnotations } from './annotationVerifier';
+import { isDuplicate, releaseDedupe } from './cache';
 import type { ToolExecutionResponse, WebMCPToolDefinition } from '../shared/types';
 
 const SUPPORTED_PROTOCOL_VERSION = '2025-06-18';
@@ -21,6 +22,7 @@ const JSONRPC_ERROR_CODES = {
 } as const;
 const CONFIRMATION_TIMEOUT = -32001; // fail-closed on missed human verdict
 const NOT_INITIALIZED = -32002;
+const RATE_LIMITED = -32003; // duplicate in-flight call or browser quota exhausted
 
 function jsonRpcResponse(id: JSONRPCRequest['id'], result: unknown): JSONRPCResponse {
   return { jsonrpc: '2.0', id, result };
@@ -74,7 +76,7 @@ export class McpEndpoint {
         return Response.json(jsonRpcError(body.id, error.code, error.message));
       }
       if (error instanceof BrowserRateLimitError) {
-        return Response.json(jsonRpcError(body.id, JSONRPC_ERROR_CODES.INTERNAL_ERROR, error.message));
+        return Response.json(jsonRpcError(body.id, RATE_LIMITED, error.message));
       }
       return Response.json(jsonRpcError(body.id, JSONRPC_ERROR_CODES.INTERNAL_ERROR, error instanceof Error ? error.message : 'Internal MCP error.'));
     }
@@ -155,8 +157,19 @@ export class McpEndpoint {
       }
     }
 
-    const execution = await this.execute(tool, params.arguments || {});
-    return this.toCallToolResult(execution);
+    // --- quota guard (same as /api/tools/execute): each tools/call burns
+    // Browser Rendering quota, so collapse duplicate in-flight calls before
+    // they race into Cloudflare's 2-concurrent-session / daily limits. ---
+    const execIdentity = `${params.name}:${JSON.stringify(params.arguments || {})}`;
+    if (isDuplicate(this.env, 'execute', execIdentity)) {
+      throw new McpProtocolError(RATE_LIMITED, 'Duplicate execution of this tool with these arguments is already in progress. Retry in a few seconds.');
+    }
+    try {
+      const execution = await this.execute(tool, params.arguments || {});
+      return this.toCallToolResult(execution);
+    } finally {
+      releaseDedupe(this.env, 'execute', execIdentity);
+    }
   }
 
   private sessionStub(): DurableObjectStub {
